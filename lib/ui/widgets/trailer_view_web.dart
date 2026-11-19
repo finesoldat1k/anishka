@@ -5,30 +5,39 @@ import 'package:material_ui/material_ui.dart';
 
 final Map<String, String> _registeredViews = {};
 
-/// Зарегистрированный на web iframe с зацикленным трейлером без звука.
-Widget buildTrailerView(String youtubeId) {
-  final embedUrl =
-      'https://www.youtube.com/embed/$youtubeId'
-      '?autoplay=1&mute=1&loop=1&playlist=$youtubeId'
-      '&controls=0&modestbranding=1&rel=0&playsinline=1'
-      '&iv_load_policy=3&disablekb=1&fs=0';
+/// Зарегистрированный на web iframe с трейлером.
+///
+/// [ambient] — фоновый режим: без звука, без контролов, зациклен.
+/// Иначе — обычный плеер YouTube со звуком и управлением.
+Widget buildTrailerView(String youtubeId, {bool ambient = true}) {
+  final embedUrl = ambient
+      ? 'https://www.youtube.com/embed/$youtubeId'
+            '?autoplay=1&mute=1&loop=1&playlist=$youtubeId'
+            '&controls=0&modestbranding=1&rel=0&playsinline=1'
+            '&iv_load_policy=3&disablekb=1&fs=0'
+      : 'https://www.youtube.com/embed/$youtubeId'
+            '?autoplay=1&mute=0&rel=0&modestbranding=1&playsinline=1'
+            '&iv_load_policy=3';
 
-  final viewType = _registeredViews.putIfAbsent(youtubeId, () {
-    final type = 'anishka-trailer-$youtubeId';
+  final key = '$youtubeId|${ambient ? 'ambient' : 'interactive'}';
+  final viewType = _registeredViews.putIfAbsent(key, () {
+    final type = 'anishka-trailer-$key';
     ui_web.platformViewRegistry.registerViewFactory(type, (viewId) {
       final frame = html.IFrameElement()
         ..src = embedUrl
         ..style.border = 'none'
         ..style.width = '100%'
         ..style.height = '100%'
-        ..style.pointerEvents = 'none'
+        ..style.pointerEvents = ambient ? 'none' : 'auto'
         ..style.background = 'transparent'
-        ..allowFullscreen = false;
+        ..allowFullscreen = !ambient;
       frame.setAttribute(
         'allow',
-        'autoplay; encrypted-media; picture-in-picture',
+        ambient
+            ? 'autoplay; encrypted-media; picture-in-picture'
+            : 'autoplay; encrypted-media; picture-in-picture; fullscreen',
       );
-      frame.setAttribute('tabindex', '-1');
+      frame.setAttribute('tabindex', ambient ? '-1' : '0');
       frame.setAttribute('title', 'трейлер');
       return frame;
     });
@@ -41,8 +50,12 @@ Widget buildTrailerView(String youtubeId) {
       final height = constraints.maxHeight;
       if (width <= 0 || height <= 0) return const SizedBox.shrink();
 
-      // youtube всегда держит 16:9. растягиваем iframe так, чтобы видео
-      // закрывало весь баннер, а лишнее обрезалось по краям.
+      // youtube всегда держит 16:9; в фоновом режиме растягиваем
+      // iframe так, чтобы видео закрывало весь баннер.
+      if (!ambient) {
+        return HtmlElementView(viewType: viewType);
+      }
+
       final videoHeight = width * 9 / 16;
       final videoWidth = height * 16 / 9;
       final fitsByHeight = videoHeight >= height;

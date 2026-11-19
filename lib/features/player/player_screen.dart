@@ -70,6 +70,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _hideTimer;
 
   String _quality = '1080';
+  final Map<String, String> _resolvedStreams = {};
   double _volume = 100;
   double _lastVolume = 80;
   double _rate = 1;
@@ -373,14 +374,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     final desired = quality ?? _quality;
     final resolved = qualities.contains(desired) ? desired : qualities.first;
-    final url = episode.hlsForQuality(resolved);
-    if (url == null) {
+    var url =
+        episode.hlsForQuality(resolved) ?? _resolvedStreams[episode.id];
+    if (url == null || url.isEmpty) {
       setState(() {
-        _playerError = 'у этой серии нет доступного источника видео.';
+        _episode = episode;
+        _voice = voice;
+        _quality = resolved;
+        _completed = false;
+        _playerError = null;
         _errorDetails = null;
-        _buffering = false;
+        _buffering = true;
       });
-      return;
+      if (!episode.canResolve) {
+        setState(() {
+          _playerError = 'у этой серии нет доступного источника видео.';
+          _errorDetails = null;
+          _buffering = false;
+        });
+        return;
+      }
+      url = await _repository.resolveEpisodeStream(episode, quality: resolved);
+      if (!mounted) return;
+      if (url == null || url.isEmpty) {
+        setState(() {
+          _playerError = 'не удалось получить ссылку на видео.';
+          _errorDetails = 'источник ${episode.resolverSource} не ответил.';
+          _buffering = false;
+        });
+        return;
+      }
+      _resolvedStreams[episode.id] = url;
     }
 
     setState(() {
@@ -431,7 +455,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (episode.hls720 != null) '720',
       if (episode.hls480 != null) '480',
     ];
-    if (options.isEmpty && episode.streamUrl != null) return ['auto'];
+    if (options.isEmpty && (episode.streamUrl != null || episode.canResolve)) {
+      return ['auto'];
+    }
     return options;
   }
 
@@ -473,6 +499,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final episode = _episode;
     final voice = _voice;
     if (episode == null || voice == null) return;
+    _resolvedStreams.remove(episode.id);
     await _startPlayback(episode, voice, quality: _quality);
   }
 

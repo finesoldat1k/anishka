@@ -4,9 +4,14 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/models/anime_source.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../features/about/about_screen.dart';
 import '../../features/details/details_screen.dart';
+import '../../features/details/episodes_screen.dart';
+import '../../features/details/related_screen.dart';
+import '../../features/details/voiceover_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/player/player_screen.dart';
+import '../../features/search/search_screen.dart';
 import '../../ui/widgets/gradient_button.dart';
 
 GoRouter createAppRouter() {
@@ -17,6 +22,72 @@ GoRouter createAppRouter() {
         path: '/',
         name: 'home',
         builder: (context, state) => const HomeScreen(),
+      ),
+      GoRoute(
+        path: '/search',
+        name: 'search',
+        pageBuilder: (context, state) {
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            child: const SearchScreen(),
+            transitionDuration: const Duration(milliseconds: 300),
+            reverseTransitionDuration: const Duration(milliseconds: 220),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+                  final curved = CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                    reverseCurve: Curves.easeInCubic,
+                  );
+                  return FadeTransition(
+                    opacity: curved,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, -0.025),
+                        end: Offset.zero,
+                      ).animate(curved),
+                      child: ScaleTransition(
+                        scale: Tween<double>(
+                          begin: 0.985,
+                          end: 1,
+                        ).animate(curved),
+                        child: child,
+                      ),
+                    ),
+                  );
+                },
+          );
+        },
+      ),
+      GoRoute(
+        path: '/about',
+        name: 'about',
+        pageBuilder: (context, state) {
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            child: const AboutScreen(),
+            transitionDuration: const Duration(milliseconds: 280),
+            reverseTransitionDuration: const Duration(milliseconds: 200),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+                  final curved = CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                    reverseCurve: Curves.easeInCubic,
+                  );
+                  return FadeTransition(
+                    opacity: curved,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.02),
+                        end: Offset.zero,
+                      ).animate(curved),
+                      child: child,
+                    ),
+                  );
+                },
+          );
+        },
       ),
       GoRoute(
         path: '/anime/:id',
@@ -34,6 +105,62 @@ GoRouter createAppRouter() {
           final id = int.tryParse(state.pathParameters['id'] ?? '');
           if (id == null || id <= 0) return const _RouteError();
           return DetailsScreen(shikimoriId: id);
+        },
+      ),
+      GoRoute(
+        path: '/anime/shikimori/:id/voices',
+        name: 'anime-voices',
+        pageBuilder: (context, state) {
+          final id = int.tryParse(state.pathParameters['id'] ?? '');
+          if (id == null || id <= 0) return const _RouteError().asPage(state);
+          final anime = state.extra is AnimeWithSources
+              ? state.extra as AnimeWithSources
+              : null;
+          return _subpage(
+            state,
+            VoiceoverScreen(animeWithSources: anime, shikimoriId: id),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/anime/shikimori/:id/voices/:voiceId/episodes',
+        name: 'anime-episodes',
+        pageBuilder: (context, state) {
+          final id = int.tryParse(state.pathParameters['id'] ?? '');
+          final voiceId = state.pathParameters['voiceId'] ?? '';
+          if (id == null || id <= 0 || voiceId.isEmpty) {
+            return const _RouteError().asPage(state);
+          }
+          final anime = state.extra is AnimeWithSources
+              ? state.extra as AnimeWithSources
+              : null;
+          return _subpage(
+            state,
+            EpisodesScreen(
+              voiceId: voiceId,
+              animeWithSources: anime,
+              shikimoriId: id,
+            ),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/anime/shikimori/:id/related',
+        name: 'anime-related',
+        pageBuilder: (context, state) {
+          final id = int.tryParse(state.pathParameters['id'] ?? '');
+          if (id == null || id <= 0) return const _RouteError().asPage(state);
+          final extra = state.extra;
+          final args = extra is RelatedArgs ? extra : null;
+          final items = args?.items ?? (extra is List ? extra : null);
+          return _subpage(
+            state,
+            RelatedScreen(
+              items: items,
+              shikimoriId: id,
+              title: args?.title,
+            ),
+          );
         },
       ),
       GoRoute(
@@ -79,8 +206,58 @@ GoRouter createAppRouter() {
   );
 }
 
+/// Helper to build a consistent subpage transition.
+CustomTransitionPage<void> _subpage(
+  GoRouterState state,
+  Widget child,
+) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 280),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionsBuilder:
+        (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.02),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
 class _RouteError extends StatelessWidget {
   const _RouteError();
+
+  CustomTransitionPage<void> asPage(GoRouterState state) =>
+      CustomTransitionPage<void>(
+        key: state.pageKey,
+        child: this,
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
+        transitionsBuilder:
+            (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOut,
+            ),
+            child: child,
+          );
+        },
+      );
 
   @override
   Widget build(BuildContext context) {

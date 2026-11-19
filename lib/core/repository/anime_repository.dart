@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../api/anilibria_api.dart';
+import '../api/anilist_api.dart';
+import '../api/kitsu_api.dart';
 import '../api/shikimori_api.dart';
 import '../models/anime_episode.dart';
 import '../models/anime_franchise.dart';
@@ -9,6 +12,7 @@ import '../models/anime_source.dart';
 import '../models/shikimori_anime.dart';
 import '../models/video_source.dart';
 import '../models/voiceover.dart';
+import '../sources/kodik_source.dart';
 import '../sources/source_manager.dart';
 
 /// Unified repository: Shikimori for catalog/search, multi-source for playback.
@@ -16,13 +20,27 @@ class AnimeRepository {
   AnimeRepository({
     AniLibriaApi? anilibriaApi,
     ShikimoriApi? shikimoriApi,
+    AniListApi? anilistApi,
+    KitsuApi? kitsuApi,
     VideoSourceManager? sourceManager,
   }) : _anilibriaApi = anilibriaApi ?? AniLibriaApi(),
        _shikimoriApi = shikimoriApi ?? ShikimoriApi(),
-       _sourceManager = sourceManager ?? VideoSourceManager();
+       _anilistApi = anilistApi ?? AniListApi(),
+       _kitsuApi = kitsuApi ?? KitsuApi(),
+       _sourceManager = sourceManager ?? _defaultSourceManager();
+
+  static VideoSourceManager _defaultSourceManager() {
+    const token = String.fromEnvironment('KODIK_TOKEN');
+    final value = token.trim();
+    return VideoSourceManager(
+      kodik: value.isEmpty ? null : KodikVideoSource(token: value),
+    );
+  }
 
   final AniLibriaApi _anilibriaApi;
   final ShikimoriApi _shikimoriApi;
+  final AniListApi _anilistApi;
+  final KitsuApi _kitsuApi;
   final VideoSourceManager _sourceManager;
 
   // Shikimori cache
@@ -30,8 +48,8 @@ class AnimeRepository {
   static const _shikimoriSearchTtl = Duration(minutes: 5);
   static const _shikimoriDetailsTtl = Duration(minutes: 30);
 
-  List<ShikimoriAnime>? _popularCache;
-  DateTime? _popularCacheAt;
+  final Map<String, List<ShikimoriAnime>> _popularCache = {};
+  final Map<String, DateTime> _popularCacheAt = {};
   final Map<String, List<ShikimoriAnime>> _shikimoriSearchCache = {};
   final Map<String, DateTime> _shikimoriSearchCacheAt = {};
   final Map<int, ShikimoriAnimeDetails> _shikimoriDetailsCache = {};
@@ -55,6 +73,9 @@ class AnimeRepository {
   static const _animeWithSourcesTtl = Duration(minutes: 15);
   final Map<int, Future<AnimeWithSources>> _animeWithSourcesRequests = {};
 
+  // Lazily resolved streams for scraped sources (AnimeVost, AniDub, ...).
+  final Map<String, String> _resolvedStreams = {};
+
   // ===== Shikimori Catalog =====
 
   /// Get popular/ongoing anime for home page (from Shikimori).
@@ -65,11 +86,13 @@ class AnimeRepository {
     String? status,
     String? kind,
   }) async {
+    final cacheKey = '$order|${status ?? ''}|${kind ?? ''}|$limit';
+    final cachedAt = _popularCacheAt[cacheKey];
     if (!refresh &&
-        _popularCache != null &&
-        _popularCacheAt != null &&
-        DateTime.now().difference(_popularCacheAt!) < _shikimoriListTtl) {
-      return _popularCache!;
+        _popularCache[cacheKey] != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _shikimoriListTtl) {
+      return _popularCache[cacheKey]!;
     }
     final result = await _shikimoriApi.getPopular(
       limit: limit,
@@ -77,20 +100,24 @@ class AnimeRepository {
       status: status,
       kind: kind,
     );
-    _popularCache = result;
-    _popularCacheAt = DateTime.now();
+    _popularCache[cacheKey] = result;
+    _popularCacheAt[cacheKey] = DateTime.now();
     return result;
   }
 
   /// Search anime on Shikimori.
-  Future<List<ShikimoriAnime>> searchShikimori(String query, {bool refresh = false}) async {
+  Future<List<ShikimoriAnime>> searchShikimori(
+    String query, {
+    bool refresh = false,
+  }) async {
     final trimmed = query.trim();
     final key = trimmed.toLowerCase();
     if (key.isEmpty) return const [];
     if (!refresh &&
         _shikimoriSearchCache[key] != null &&
         _shikimoriSearchCacheAt[key] != null &&
-        DateTime.now().difference(_shikimoriSearchCacheAt[key]!) < _shikimoriSearchTtl) {
+        DateTime.now().difference(_shikimoriSearchCacheAt[key]!) <
+            _shikimoriSearchTtl) {
       return _shikimoriSearchCache[key]!;
     }
     final pending = _shikimoriSearchRequests[key];
@@ -111,11 +138,15 @@ class AnimeRepository {
   }
 
   /// Get Shikimori anime details by ID.
-  Future<ShikimoriAnimeDetails> getShikimoriDetails(int id, {bool refresh = false}) async {
+  Future<ShikimoriAnimeDetails> getShikimoriDetails(
+    int id, {
+    bool refresh = false,
+  }) async {
     if (!refresh &&
         _shikimoriDetailsCache[id] != null &&
         _shikimoriDetailsCacheAt[id] != null &&
-        DateTime.now().difference(_shikimoriDetailsCacheAt[id]!) < _shikimoriDetailsTtl) {
+        DateTime.now().difference(_shikimoriDetailsCacheAt[id]!) <
+            _shikimoriDetailsTtl) {
       return _shikimoriDetailsCache[id]!;
     }
     final pending = _shikimoriDetailsRequests[id];
@@ -137,7 +168,10 @@ class AnimeRepository {
 
   // ===== AniLibria Sources =====
 
-  Future<AnimeRelease> _getAnilibriaRelease(int id, {bool refresh = false}) async {
+  Future<AnimeRelease> _getAnilibriaRelease(
+    int id, {
+    bool refresh = false,
+  }) async {
     if (!refresh &&
         _releases[id] != null &&
         _releasesAt[id] != null &&
@@ -164,11 +198,15 @@ class AnimeRepository {
   // ===== Unified: Shikimori + Sources =====
 
   /// Get anime with all available sources (Shikimori details + AniLibria releases).
-  Future<AnimeWithSources> getAnimeWithSources(int shikimoriId, {bool refresh = false}) async {
+  Future<AnimeWithSources> getAnimeWithSources(
+    int shikimoriId, {
+    bool refresh = false,
+  }) async {
     if (!refresh &&
         _animeWithSourcesCache[shikimoriId] != null &&
         _animeWithSourcesCacheAt[shikimoriId] != null &&
-        DateTime.now().difference(_animeWithSourcesCacheAt[shikimoriId]!) < _animeWithSourcesTtl) {
+        DateTime.now().difference(_animeWithSourcesCacheAt[shikimoriId]!) <
+            _animeWithSourcesTtl) {
       return _animeWithSourcesCache[shikimoriId]!;
     }
     final pending = _animeWithSourcesRequests[shikimoriId];
@@ -188,64 +226,79 @@ class AnimeRepository {
   }
 
   Future<AnimeWithSources> _buildAnimeWithSources(int shikimoriId) async {
-    // 1. Get Shikimori details
+    // 1. Shikimori details are the only required request.
     final shikimoriDetails = await _shikimoriApi.getDetails(shikimoriId);
-
-    // 2. Find AniLibria releases for this Shikimori ID
     final nameHint = shikimoriDetails.russian.isNotEmpty
         ? shikimoriDetails.russian
         : shikimoriDetails.name;
 
-    final found = await _anilibriaApi.findByShikimoriId(shikimoriId, nameHint: nameHint);
+    // Everything else starts immediately and is allowed to fail independently.
+    // A dead scraper must never prevent the page from opening.
+    final anilistFuture = _findAniList(shikimoriDetails);
+    final kitsuFuture = _findKitsu(shikimoriDetails);
+    final screenshotsFuture = _safeScreenshots(shikimoriDetails.id);
+    final releasesFuture = _loadAnilibriaReleases(shikimoriId, nameHint);
+    final additionalFuture = _fetchAdditionalSources(shikimoriDetails);
+    final relatedFuture = _loadRelated(shikimoriDetails);
 
-    // The catalog search returns compact releases without members/episodes.
-    // Load full details for every match (also warms the player cache).
-    final releases = await Future.wait(
-      found.map((release) async {
-        try {
-          return await _getAnilibriaRelease(release.id);
-        } catch (_) {
-          return release;
-        }
-      }),
+    final releases = await releasesFuture;
+
+    // 2. Merge AniList/Kitsu/Shikimori screenshots into the details.
+    final anilist = await anilistFuture;
+    final kitsu = await kitsuFuture;
+    final screenshots = await screenshotsFuture;
+    var enrichedShikimori = _enrichWithMetadata(
+      shikimoriDetails,
+      anilist: anilist,
+      kitsu: kitsu,
+      screenshots: screenshots,
     );
 
-    // 3. Enrich Shikimori details with AniLibria poster fallback
-    final enrichedShikimori = _enrichWithAnilibriaPosters(shikimoriDetails, releases);
+    // 3. AniLibria poster fallback.
+    enrichedShikimori = _enrichWithAnilibriaPosters(
+      enrichedShikimori,
+      releases,
+    );
 
-    // 4. Build sources from releases (AniLibria)
+    // 4. Build one studio voiceover per AniLibria release (cast is secondary).
     final sources = <AnimeSource>[];
     for (final release in releases) {
-      final voiceActors = release.voiceActors;
-      if (voiceActors.isEmpty) continue;
-
-      for (final voice in voiceActors) {
-        final source = AnimeSource(
-          id: 'anilibria:${release.id}:${voice.nickname}',
+      final members = release.voiceActors.isNotEmpty
+          ? release.voiceActors
+          : release.members;
+      sources.add(
+        AnimeSource(
+          id: 'anilibria:${release.id}',
           shikimoriAnime: enrichedShikimori,
           release: release,
-          voiceover: AniLibriaVoiceover(voice),
+          voiceover: AniLibriaVoiceover(
+            releaseId: release.id,
+            members: members,
+            episodes: release.episodes.length,
+          ),
           sourceType: 'anilibria',
-        );
-        sources.add(source);
-      }
+        ),
+      );
     }
 
-    // 5. Search additional video sources (AnimeVost, AniDub, Kodik) by title
-    final additionalSources = await _fetchAdditionalSources(shikimoriDetails, enrichedShikimori);
-    sources.addAll(additionalSources);
+    // 5. Additional video sources (AnimeVost, AniDub, optional Kodik).
+    // They were requested with the base Shikimori details for speed, so swap
+    // in the enriched metadata once AniList/Kitsu/screenshots have arrived.
+    final additional = await additionalFuture;
+    sources.addAll(
+      additional.map(
+        (source) => AnimeSource(
+          id: source.id,
+          shikimoriAnime: enrichedShikimori,
+          release: source.release,
+          voiceover: source.voiceover,
+          sourceType: source.sourceType,
+        ),
+      ),
+    );
 
-    // 6. Fetch related anime from Shikimori franchise
-    final related = <ShikimoriAnime>[];
-    if (enrichedShikimori.franchise != null && enrichedShikimori.franchise!.isNotEmpty) {
-      try {
-        final franchiseAnime = await _shikimoriApi.getByFranchise(enrichedShikimori.franchise!, limit: 20);
-        // Exclude current anime from related
-        related.addAll(franchiseAnime.where((a) => a.id != shikimoriId));
-      } catch (_) {
-        // Ignore franchise fetch errors
-      }
-    }
+    // 6. Related anime from the Shikimori franchise.
+    final related = await relatedFuture;
 
     return AnimeWithSources(
       shikimoriAnime: enrichedShikimori,
@@ -254,90 +307,461 @@ class AnimeRepository {
     );
   }
 
-  /// Search additional video sources (AnimeVost, AniDub, Kodik) for this anime.
-  Future<List<AnimeSource>> _fetchAdditionalSources(
-    ShikimoriAnimeDetails shikimori,
-    ShikimoriAnimeDetails enrichedShikimori,
+  Future<List<AnimeRelease>> _loadAnilibriaReleases(
+    int shikimoriId,
+    String nameHint,
   ) async {
-    final additionalSources = <AnimeSource>[];
-    final searchTitle = shikimori.russian.isNotEmpty ? shikimori.russian : shikimori.name;
-
-    // Search all video sources in parallel, but never block the details page
-    // for too long if a scraper is slow or unreachable.
-    List<SourceAnimeEntry> results;
     try {
-      results = await _sourceManager
-          .search(searchTitle, limit: 10)
+      final found = await _anilibriaApi
+          .findByShikimoriId(shikimoriId, nameHint: nameHint)
           .timeout(const Duration(seconds: 8));
+      if (found.isEmpty) return const [];
+
+      // The catalog search returns compact releases without members/episodes.
+      // Load full details for every match (also warms the player cache).
+      final loaded = await Future.wait(
+        found.map((release) async {
+          try {
+            return await _getAnilibriaRelease(
+              release.id,
+            ).timeout(const Duration(seconds: 7));
+          } catch (_) {
+            return release;
+          }
+        }),
+      );
+      return loaded;
     } catch (_) {
-      results = const [];
+      return const [];
     }
-
-    // Group results by source
-    final bySource = <String, List<SourceAnimeEntry>>{};
-    for (final entry in results) {
-      if (entry.sourceId == 'anilibria') continue; // already handled above
-      bySource.putIfAbsent(entry.sourceId, () => []).add(entry);
-    }
-
-    // Convert to AnimeSource objects
-    for (final entry in bySource.entries) {
-      final sourceId = entry.key;
-      final entries = entry.value;
-      if (entries.isEmpty) continue;
-
-      // Use the first match from each source
-      final match = entries.first;
-      SourceAnimeDetails? details;
-      try {
-        details = await _sourceManager
-            .getDetails(sourceId, match.externalId)
-            .timeout(const Duration(seconds: 6));
-      } catch (_) {
-        details = null;
-      }
-      if (details == null) continue;
-      final resolved = details;
-
-      // Map voiceovers from this source
-      final voiceovers = resolved.episodesList.isNotEmpty
-          ? resolved.episodesList.take(1).map((e) => _createVoiceoverFromSource(sourceId, resolved)).toList()
-          : <VoiceoverInfo>[];
-
-      if (voiceovers.isEmpty) continue;
-
-      for (final voice in voiceovers) {
-        additionalSources.add(AnimeSource(
-          id: '$sourceId:${match.externalId}:${voice.id}',
-          shikimoriAnime: enrichedShikimori,
-          release: _createReleaseFromSource(sourceId, resolved),
-          voiceover: voice,
-          sourceType: sourceId,
-        ));
-      }
-    }
-
-    return additionalSources;
   }
 
-  VoiceoverInfo _createVoiceoverFromSource(String sourceId, SourceAnimeDetails details) {
-    final sourceName = switch (sourceId) {
-      'animevost' => 'AnimeVost',
-      'anidub' => 'AniDub',
-      'kodik' => 'Kodik',
-      _ => sourceId,
-    };
-    return GenericVoiceover(
-      id: '${sourceId}_default',
-      title: sourceName,
-      subtitle: '$sourceName · ${details.russianTitle ?? details.title}',
-      source: sourceId,
+  Future<List<ShikimoriAnime>> _loadRelated(
+    ShikimoriAnimeDetails details,
+  ) async {
+    final franchise = details.franchise;
+    if (franchise == null || franchise.isEmpty) return const [];
+    try {
+      final items = await _shikimoriApi
+          .getByFranchise(franchise, limit: 30)
+          .timeout(const Duration(seconds: 6));
+      return items.where((anime) => anime.id != details.id).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  // ===== Metadata enrichment =====
+
+  List<String> _searchQueries(ShikimoriAnimeDetails details) {
+    final queries = <String>[];
+    void add(String? value) {
+      final text = value?.trim() ?? '';
+      if (text.isEmpty) return;
+      if (queries.any((q) => q.toLowerCase() == text.toLowerCase())) return;
+      queries.add(text);
+    }
+
+    add(details.russian);
+    add(details.name);
+    if (details.english != null) {
+      for (final value in details.english!) {
+        add(value);
+      }
+    }
+    if (details.synonyms != null) {
+      for (final value in details.synonyms!.take(2)) {
+        add(value);
+      }
+    }
+    return queries.take(2).toList();
+  }
+
+  Future<AniListMedia?> _findAniList(ShikimoriAnimeDetails details) async {
+    for (final query in _searchQueries(details)) {
+      try {
+        final media = await _anilistApi
+            .find(query)
+            .timeout(const Duration(seconds: 4));
+        if (media != null) return media;
+      } catch (_) {
+        // Try the next title variant.
+      }
+    }
+    return null;
+  }
+
+  Future<KitsuMedia?> _findKitsu(ShikimoriAnimeDetails details) async {
+    for (final query in _searchQueries(details)) {
+      try {
+        final media = await _kitsuApi
+            .find(query)
+            .timeout(const Duration(seconds: 4));
+        if (media != null) return media;
+      } catch (_) {
+        // Try the next title variant.
+      }
+    }
+    return null;
+  }
+
+  Future<List<String>> _safeScreenshots(int id) async {
+    try {
+      return await _shikimoriApi
+          .screenshots(id)
+          .timeout(const Duration(seconds: 6));
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  ShikimoriAnimeDetails _enrichWithMetadata(
+    ShikimoriAnimeDetails details, {
+    required AniListMedia? anilist,
+    required KitsuMedia? kitsu,
+    required List<String> screenshots,
+  }) {
+    String? shikimoriTrailer;
+    for (final video in details.videos ?? const <ShikimoriVideo>[]) {
+      if (video.url.trim().isEmpty) continue;
+      if (video.kind != 'pv' && video.kind != 'op') continue;
+      shikimoriTrailer = video.url;
+      break;
+    }
+
+    final kitsuTrailer = kitsu?.youtubeVideoId?.trim();
+    final trailerUrl =
+        shikimoriTrailer ??
+        anilist?.trailerUrl ??
+        (kitsuTrailer == null || kitsuTrailer.isEmpty
+            ? null
+            : 'https://www.youtube.com/watch?v=$kitsuTrailer');
+
+    final trailerThumbnail =
+        anilist?.trailerThumbnail ??
+        (trailerUrl == null ? null : _youtubeThumbnail(trailerUrl));
+
+    return details.copyWith(
+      screenshots: screenshots,
+      trailerUrl: trailerUrl,
+      trailerThumbnail: trailerThumbnail,
+      trailerSite: anilist?.trailerSite ?? (trailerUrl?.contains('youtu') == true ? 'youtube' : null),
+      metadataPoster: anilist?.posterUrl ?? kitsu?.posterUrl,
+      metadataBackground: anilist?.bannerUrl ?? kitsu?.coverUrl,
+      metadataScore: anilist?.score ?? kitsu?.score,
+      metadataYear: anilist?.year ?? kitsu?.year,
+      metadataEpisodes: anilist?.episodes ?? kitsu?.episodes,
+      metadataDuration: anilist?.duration ?? kitsu?.episodeLength,
+      metadataDescription: _preferredDescription(
+        anilist?.description,
+        kitsu?.synopsis,
+      ),
+      metadataEnglishTitle: anilist?.english ?? kitsu?.englishTitle,
+      metadataGenres: anilist?.genres ?? const [],
+      metadataStudios: anilist?.studios ?? const [],
     );
   }
 
-  AnimeRelease _createReleaseFromSource(String sourceId, SourceAnimeDetails details) {
+  String? _preferredDescription(String? anilist, String? kitsu) {
+    final primary = anilist?.trim();
+    if (primary != null && primary.isNotEmpty) return primary;
+    final secondary = kitsu?.trim();
+    if (secondary != null && secondary.isNotEmpty) return secondary;
+    return null;
+  }
+
+  String? _youtubeThumbnail(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+    final host = uri.host.toLowerCase();
+    String? id;
+    if (host.contains('youtu.be')) {
+      id = uri.pathSegments.isEmpty ? null : uri.pathSegments.first;
+    } else if (host.contains('youtu')) {
+      id = uri.queryParameters['v'];
+      if (id == null && uri.pathSegments.length >= 2) {
+        id = uri.pathSegments[1];
+      }
+    }
+    if (id == null || id.isEmpty) return null;
+    return 'https://img.youtube.com/vi/$id/hqdefault.jpg';
+  }
+
+  // ===== Additional video sources =====
+
+  /// Search additional video sources (AnimeVost, AniDub, Kodik) for this anime.
+  ///
+  /// Kodik returns one entry per translation track, so a single title can
+  /// produce many voiceovers: `AniStar`, `JAM CLUB`, `SHIZA Project`,
+  /// `КОМНАТА ДИДИ`, `AniBaza`, `StudioBand`, ... They all become separate
+  /// [AnimeSource] objects and are listed on the voiceover page.
+  Future<List<AnimeSource>> _fetchAdditionalSources(
+    ShikimoriAnimeDetails shikimori,
+  ) async {
+    final query = shikimori.russian.isNotEmpty
+        ? shikimori.russian
+        : shikimori.name;
+    if (query.trim().isEmpty) return const [];
+
+    // Search all video sources in parallel, but never block the details page
+    // for too long if a scraper is slow or unreachable.
+    final results = <SourceAnimeEntry>[];
+    final seen = <String>{};
+    try {
+      final entries = await _sourceManager
+          .search(query, limit: 20)
+          .timeout(const Duration(seconds: 7));
+      for (final entry in entries) {
+        if (entry.sourceId == 'anilibria') continue; // handled above
+        if (seen.add('${entry.sourceId}:${entry.externalId}')) {
+          results.add(entry);
+        }
+      }
+    } catch (_) {
+      return const [];
+    }
+
+    // Group results by source and pick the best title/year match only.
+    final bySource = <String, List<SourceAnimeEntry>>{};
+    for (final entry in results) {
+      bySource.putIfAbsent(entry.sourceId, () => []).add(entry);
+    }
+
+    final matches = <String, SourceAnimeEntry>{};
+    for (final entry in bySource.entries) {
+      final match = _bestMatch(entry.value, shikimori);
+      if (match != null) matches[entry.key] = match;
+    }
+    if (matches.isEmpty) return const [];
+
+    // Details for every matched source load in parallel.
+    final detailsBySource = <String, SourceAnimeDetails>{};
+    await Future.wait(
+      matches.entries.map((entry) async {
+        try {
+          final details = await _sourceManager
+              .getDetails(entry.key, entry.value.externalId)
+              .timeout(const Duration(seconds: 6));
+          if (details != null) detailsBySource[entry.key] = details;
+        } catch (_) {
+          // A broken scraper must not hide the other sources.
+        }
+      }),
+    );
+
+    final additionalSources = <AnimeSource>[];
+    for (final entry in matches.entries) {
+      final sourceId = entry.key;
+      final details = detailsBySource[sourceId];
+      if (details == null) continue;
+      final match = entry.value;
+
+      for (final voice in _voiceTracksFor(sourceId, details)) {
+        if (voice.episodes.isEmpty) continue;
+        final release = _createReleaseFromSource(
+          sourceId,
+          details,
+          libraryId: shikimori.id,
+          episodes: voice.episodes,
+        );
+        additionalSources.add(
+          AnimeSource(
+            id: '$sourceId:${match.externalId}:${voice.key}',
+            shikimoriAnime: shikimori,
+            release: release,
+            voiceover: GenericVoiceover(
+              id: '${sourceId}_${voice.key}',
+              title: voice.title,
+              subtitle: voice.subtitle,
+              source: sourceId,
+              logoUrl: voice.logoUrl,
+              episodeCount: voice.episodes.length,
+            ),
+            sourceType: sourceId,
+          ),
+        );
+      }
+    }
+
+    additionalSources.sort((a, b) {
+      final bySource = _sourcePriority(
+        a.sourceType,
+      ).compareTo(_sourcePriority(b.sourceType));
+      if (bySource != 0) return bySource;
+      return a.voiceover.title.compareTo(b.voiceover.title);
+    });
+    return additionalSources;
+  }
+
+  /// Split source details into separate voiceover tracks.
+  ///
+  /// Kodik lists episodes for every translation it has. Other scrapers return
+  /// a single track, so they collapse into one entry.
+  List<_VoiceTrack> _voiceTracksFor(
+    String sourceId,
+    SourceAnimeDetails details,
+  ) {
+    final groups = <String, List<SourceEpisode>>{};
+    final titles = <String, String>{};
+    for (final episode in details.episodesList) {
+      final id = (episode.voiceId ?? '').trim();
+      final key = id.isEmpty ? 'default' : id;
+      groups.putIfAbsent(key, () => []).add(episode);
+      final title = (episode.voiceTitle ?? '').trim();
+      if (title.isNotEmpty) titles[key] = title;
+    }
+
+    if (groups.isEmpty) return const [];
+    final sourceLabel = _sourceLabel(sourceId);
+    final tracks = <_VoiceTrack>[];
+    for (final entry in groups.entries) {
+      final rawTitle = titles[entry.key] ?? '';
+      final title = rawTitle.isEmpty ? sourceLabel : rawTitle;
+      final isStudioName =
+          _normalizeTitle(title) != _normalizeTitle(sourceLabel);
+      tracks.add(
+        _VoiceTrack(
+          key: entry.key,
+          title: title,
+          subtitle: isStudioName
+              ? 'озвучка студии · $sourceLabel'
+              : 'озвучка студии · $sourceLabel',
+          logoUrl: _sourceLogo(sourceId, title),
+          episodes: entry.value,
+        ),
+      );
+    }
+    return tracks;
+  }
+
+  String _sourceLabel(String sourceId) => switch (sourceId) {
+    'anilibria' => 'anilibria',
+    'animevost' => 'animevost',
+    'anidub' => 'anidub',
+    'kodik' => 'kodik',
+    _ => sourceId,
+  };
+
+  String? _sourceLogo(String sourceId, String title) {
+    final normalized = title.toLowerCase();
+    if (normalized.contains('anilibria')) {
+      return 'https://anilibria.top/favicon.ico';
+    }
+    return switch (sourceId) {
+      'anilibria' => 'https://anilibria.top/favicon.ico',
+      'animevost' => 'https://animevost.org/favicon.ico',
+      'anidub' => 'https://anidub.com/favicon.ico',
+      _ => null,
+    };
+  }
+
+  int _sourcePriority(String sourceId) => switch (sourceId) {
+    'anilibria' => 0,
+    'animevost' => 1,
+    'anidub' => 2,
+    'kodik' => 3,
+    _ => 9,
+  };
+
+  SourceAnimeEntry? _bestMatch(
+    List<SourceAnimeEntry> entries,
+    ShikimoriAnimeDetails anime,
+  ) {
+    final targets = <String>{
+      _normalizeTitle(anime.russian),
+      _normalizeTitle(anime.name),
+      if (anime.english != null)
+        for (final value in anime.english!) _normalizeTitle(value),
+      if (anime.synonyms != null)
+        for (final value in anime.synonyms!.take(2)) _normalizeTitle(value),
+    }..removeWhere((value) => value.isEmpty);
+    if (targets.isEmpty) return null;
+
+    final year = anime.year;
+    SourceAnimeEntry? best;
+    var bestScore = 0;
+
+    for (final entry in entries) {
+      final names = <String>{
+        _normalizeTitle(entry.displayTitle),
+        _normalizeTitle(entry.title),
+        if (entry.russianTitle != null) _normalizeTitle(entry.russianTitle!),
+      }..removeWhere((value) => value.isEmpty);
+
+      var score = 0;
+      for (final name in names) {
+        for (final target in targets) {
+          if (name == target) {
+            score = math.max(score, 8);
+          } else if (name.contains(target) || target.contains(name)) {
+            score = math.max(score, 4);
+          }
+        }
+      }
+      if (score == 0) continue;
+
+      if (year != null && entry.year != null) {
+        final diff = (entry.year! - year).abs();
+        if (diff == 0) {
+          score += 4;
+        } else if (diff <= 1) {
+          score += 1;
+        } else {
+          score -= 2;
+        }
+      }
+      if (entry.kind != null && anime.kind.isNotEmpty) {
+        final targetKind = _normalizeKind(anime.kind);
+        final entryKind = _normalizeKind(entry.kind!);
+        if (targetKind.isNotEmpty && targetKind == entryKind) score += 1;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = entry;
+      }
+    }
+
+    // Avoid obvious mismatches: require at least a partial title match.
+    return bestScore >= 4 ? best : null;
+  }
+
+  String _normalizeTitle(String? value) {
+    if (value == null) return '';
+    return value
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'\[[^\]]*\]'), ' ')
+        .replaceAll(RegExp(r'\([^)]*\)'), ' ')
+        .replaceAll(RegExp(r'[^a-zа-я0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _normalizeKind(String value) {
+    final normalized = value.toLowerCase();
+    if (normalized.contains('фильм') || normalized.contains('movie')) {
+      return 'movie';
+    }
+    if (normalized.contains('ova')) return 'ova';
+    if (normalized.contains('ona')) return 'ona';
+    if (normalized.contains('спешл') || normalized.contains('special')) {
+      return 'special';
+    }
+    if (normalized.contains('tv') || normalized.contains('сериал')) {
+      return 'tv';
+    }
+    return '';
+  }
+
+  AnimeRelease _createReleaseFromSource(
+    String sourceId,
+    SourceAnimeDetails details, {
+    required int libraryId,
+    required List<SourceEpisode> episodes,
+  }) {
     return AnimeRelease(
-      id: 0, // placeholder
+      id: libraryId, // stable id for the library (Shikimori anime id)
       alias: '',
       name: details.russianTitle ?? details.title,
       englishName: details.title,
@@ -345,7 +769,7 @@ class AnimeRepository {
       year: details.year,
       type: details.kind,
       season: null,
-      ageRating: null, // SourceAnimeDetails doesn't have rating
+      ageRating: null,
       shikimoriRating: double.tryParse(details.score ?? ''),
       internalRating: null,
       posterPath: details.posterUrl,
@@ -356,22 +780,36 @@ class AnimeRepository {
       episodesTotal: details.episodes,
       genres: details.genres ?? [],
       members: [],
-      episodes: details.episodesList
-          .map((e) => AnimeEpisode(
-                id: e.externalId,
-                ordinal: e.ordinal,
-                name: e.title ?? 'Серия ${e.ordinal}',
-                hls480: e.hlsUrls['480'] ?? e.mp4Urls['480'] ?? e.hlsUrls['auto'] ?? e.mp4Urls['auto'],
-                hls720: e.hlsUrls['720'] ?? e.mp4Urls['720'],
-                hls1080: e.hlsUrls['1080'] ?? e.mp4Urls['1080'],
-                durationSeconds: e.duration,
-                previewPath: e.posterUrl,
-                openingStart: null,
-                openingStop: null,
-                endingStart: null,
-                endingStop: null,
-                sortOrder: e.ordinal,
-              ))
+      episodes: episodes
+          .map((episode) {
+            final hls480 =
+                episode.hlsUrls['480'] ??
+                episode.mp4Urls['480'] ??
+                episode.hlsUrls['auto'] ??
+                episode.mp4Urls['auto'];
+            final hls720 =
+                episode.hlsUrls['720'] ?? episode.mp4Urls['720'];
+            final hls1080 =
+                episode.hlsUrls['1080'] ?? episode.mp4Urls['1080'];
+            final hasDirect = hls480 != null || hls720 != null || hls1080 != null;
+            return AnimeEpisode(
+              id: '$sourceId:${episode.externalId}',
+              ordinal: episode.ordinal,
+              name: episode.title ?? 'серия ${episode.ordinal}',
+              hls480: hls480,
+              hls720: hls720,
+              hls1080: hls1080,
+              durationSeconds: episode.duration,
+              previewPath: episode.posterUrl,
+              openingStart: null,
+              openingStop: null,
+              endingStart: null,
+              endingStop: null,
+              sortOrder: episode.ordinal,
+              resolverSource: hasDirect ? null : sourceId,
+              resolverId: hasDirect ? null : episode.externalId,
+            );
+          })
           .toList(),
       publishDay: null,
       blockedByGeo: false,
@@ -382,6 +820,35 @@ class AnimeRepository {
     );
   }
 
+  /// Resolve an episode stream lazily for scraped sources.
+  Future<String?> resolveEpisodeStream(
+    AnimeEpisode episode, {
+    String quality = 'auto',
+  }) async {
+    final direct = episode.hlsForQuality(quality) ?? episode.streamUrl;
+    if (direct != null && direct.isNotEmpty) return direct;
+    if (!episode.canResolve) return null;
+
+    final key = '${episode.resolverSource}:${episode.resolverId}';
+    final cached = _resolvedStreams[key];
+    if (cached != null && cached.isNotEmpty) return cached;
+
+    try {
+      final url = await _sourceManager.streamUrl(
+        episode.resolverSource!,
+        episode.resolverId!,
+        quality: quality,
+      );
+      if (url != null && url.isNotEmpty) {
+        _resolvedStreams[key] = url;
+        return url;
+      }
+    } catch (_) {
+      // Playback errors are surfaced by the player.
+    }
+    return null;
+  }
+
   /// Enrich Shikimori details with AniLibria poster/background fallback.
   ShikimoriAnimeDetails _enrichWithAnilibriaPosters(
     ShikimoriAnimeDetails shikimori,
@@ -389,20 +856,22 @@ class AnimeRepository {
   ) {
     if (releases.isEmpty) return shikimori;
 
-    // Find the first release with a valid poster
     String? anilibriaPoster;
     String? anilibriaBackground;
     for (final r in releases) {
-      if (anilibriaPoster == null && r.posterUrl != null && r.posterUrl!.isNotEmpty) {
+      if (anilibriaPoster == null &&
+          r.posterUrl != null &&
+          r.posterUrl!.isNotEmpty) {
         anilibriaPoster = r.posterUrl;
       }
-      if (anilibriaBackground == null && r.backgroundUrl != null && r.backgroundUrl!.isNotEmpty) {
+      if (anilibriaBackground == null &&
+          r.backgroundUrl != null &&
+          r.backgroundUrl!.isNotEmpty) {
         anilibriaBackground = r.backgroundUrl;
       }
       if (anilibriaPoster != null && anilibriaBackground != null) break;
     }
 
-    // Return enriched copy with fallbacks
     return shikimori.copyWith(
       anilibriaPosterFallback: anilibriaPoster,
       anilibriaBackgroundFallback: anilibriaBackground,
@@ -411,9 +880,13 @@ class AnimeRepository {
 
   // ===== Legacy compatibility =====
 
-  Future<AnimeRelease> release(int id, {bool refresh = false}) => _getAnilibriaRelease(id, refresh: refresh);
+  Future<AnimeRelease> release(int id, {bool refresh = false}) =>
+      _getAnilibriaRelease(id, refresh: refresh);
 
-  Future<List<AnimeFranchise>> franchises(int releaseId, {bool refresh = false}) {
+  Future<List<AnimeFranchise>> franchises(
+    int releaseId, {
+    bool refresh = false,
+  }) {
     if (!refresh &&
         _franchises[releaseId] != null &&
         _franchisesAt[releaseId] != null &&
@@ -430,8 +903,8 @@ class AnimeRepository {
   AnimeRelease? cachedRelease(int id) => _releases[id];
 
   void clearCaches() {
-    _popularCache = null;
-    _popularCacheAt = null;
+    _popularCache.clear();
+    _popularCacheAt.clear();
     _shikimoriSearchCache.clear();
     _shikimoriSearchCacheAt.clear();
     _shikimoriDetailsCache.clear();
@@ -448,5 +921,23 @@ class AnimeRepository {
     _animeWithSourcesCache.clear();
     _animeWithSourcesCacheAt.clear();
     _animeWithSourcesRequests.clear();
+    _resolvedStreams.clear();
   }
+}
+
+/// One voiceover/translation track inside a scraped source.
+class _VoiceTrack {
+  const _VoiceTrack({
+    required this.key,
+    required this.title,
+    required this.subtitle,
+    required this.episodes,
+    this.logoUrl,
+  });
+
+  final String key;
+  final String title;
+  final String subtitle;
+  final List<SourceEpisode> episodes;
+  final String? logoUrl;
 }

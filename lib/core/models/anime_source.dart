@@ -83,9 +83,27 @@ class AnimeWithSources {
   /// Background from Shikimori
   String? get backgroundUrl => shikimoriAnime.backgroundUrl;
 
-  /// All unique voiceovers across sources
-  List<VoiceoverInfo> get allVoiceovers =>
-      sources.map((s) => s.voiceover).toSet().toList();
+  /// All unique voiceovers across sources (deduplicated by id).
+  List<VoiceoverInfo> get allVoiceovers {
+    final seen = <String>{};
+    final result = <VoiceoverInfo>[];
+    for (final source in sources) {
+      if (seen.add(source.voiceover.id)) result.add(source.voiceover);
+    }
+    return result;
+  }
+
+  /// Sources that actually have playable episodes.
+  List<AnimeSource> get playableSources =>
+      sources.where((source) => source.episodes.isNotEmpty).toList();
+
+  /// Find a source by its voiceover id.
+  AnimeSource? sourceForVoice(String voiceId) {
+    for (final source in sources) {
+      if (source.voiceover.id == voiceId) return source;
+    }
+    return null;
+  }
 
   /// Check if any source has episodes
   bool get hasEpisodes => sources.any((s) => s.episodes.isNotEmpty);

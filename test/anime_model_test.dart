@@ -115,6 +115,36 @@ void main() {
       expect(episode.hasStream, isFalse);
       expect(episode.duration, isNull);
     });
+
+    test('keeps lazy resolver fields through a json round-trip', () {
+      final episode = AnimeEpisode.fromJson({
+        'id': 'vost-1',
+        'ordinal': 1,
+        'name': '1 серия',
+        'resolver_source': 'animevost',
+        'resolver_id': '1451327130',
+      });
+
+      expect(episode.streamUrl, isNull);
+      expect(episode.canResolve, isTrue);
+      expect(episode.hasStream, isTrue);
+
+      final round = AnimeEpisode.fromJson(episode.toJson());
+      expect(round.resolverSource, 'animevost');
+      expect(round.resolverId, '1451327130');
+      expect(round.hasStream, isTrue);
+    });
+
+    test('requires both resolver fields to consider an episode playable', () {
+      final episode = AnimeEpisode.fromJson({
+        'id': 'vost-2',
+        'ordinal': 2,
+        'resolver_source': 'animevost',
+      });
+
+      expect(episode.canResolve, isFalse);
+      expect(episode.hasStream, isFalse);
+    });
   });
 
   group('anime release', () {
@@ -159,9 +189,30 @@ void main() {
 
       expect(voices, hasLength(1));
       expect(voices.single.id, defaultVoiceoverId);
-      expect(voices.single.title, 'русская озвучка');
-      expect(voices.single.subtitle, 'anilibria · иван озвучка');
+      expect(voices.single.title, 'anilibria');
+      expect(voices.single.subtitle, 'озвучка студии · иван озвучка');
       expect(voiceoverById(release, 'unknown').id, defaultVoiceoverId);
+    });
+
+    test('groups the anilibria cast into one studio voiceover', () {
+      final release = AnimeRelease.fromJson(releaseJson());
+      final voice = AniLibriaVoiceover(
+        releaseId: release.id,
+        members: release.voiceActors,
+      );
+
+      expect(voice.id, 'anilibria_42');
+      expect(voice.title, 'anilibria');
+      expect(voice.subtitle, 'озвучка студии · иван озвучка');
+      expect(voice.source, 'anilibria');
+      expect(voice.releaseMember?.displayName, 'иван озвучка');
+    });
+
+    test('describes an empty anilibria cast without a dangling separator', () {
+      const voice = AniLibriaVoiceover(releaseId: 7, members: []);
+
+      expect(voice.subtitle, 'озвучка студии anilibria');
+      expect(voice.releaseMember, isNull);
     });
   });
 }

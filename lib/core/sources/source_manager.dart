@@ -98,6 +98,21 @@ class VideoSourceManager {
     return const [];
   }
 
+  /// Resolve a stream URL using one exact source (no cross-source fallback).
+  ///
+  /// Scraped sources carry lazy resolver ids, so the source is always known.
+  Future<String?> streamUrl(
+    String sourceId,
+    String sourceEpisodeId, {
+    String quality = 'auto',
+  }) async {
+    final source = _sources.firstWhere(
+      (s) => s.sourceId == sourceId,
+      orElse: () => throw ArgumentError('Source not found: $sourceId'),
+    );
+    return source.getStreamUrl(sourceEpisodeId, quality);
+  }
+
   /// Get stream URL with fallback across sources
   Future<String?> getStreamUrl(String sourceEpisodeId, String quality, {String? preferredSource}) async {
     final ordered = preferredSource != null

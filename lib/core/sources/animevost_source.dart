@@ -1,5 +1,6 @@
-// AnimeVost video source implementation (RSS + HTML parsing).
+// AnimeVost video source: DLE search, episode ids and direct MP4 extraction.
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:html/parser.dart' as html_parser;
@@ -14,26 +15,31 @@ class AnimeVostVideoSource implements VideoSource {
                 baseUrl: 'https://animevost.org',
                 connectTimeout: const Duration(seconds: 15),
                 receiveTimeout: const Duration(seconds: 30),
-                headers: {
-                  'User-Agent': 'anishka/1.0',
-                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                headers: const {
+                  'User-Agent':
+                      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                      '(KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+                  'Accept':
+                      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                  'Accept-Language': 'ru,en;q=0.8',
                 },
               ),
             );
 
   final Dio _dio;
+  final Map<String, String?> _streamCache = {};
 
   @override
   String get sourceId => 'animevost';
 
   @override
-  String get displayName => 'AnimeVost';
+  String get displayName => 'animevost';
 
   @override
-  int get priority => 2; // Second priority
+  int get priority => 2;
 
   @override
-  List<String> get availableQualities => const ['1080', '720', '480'];
+  List<String> get availableQualities => const ['720', 'auto'];
 
   @override
   Future<bool> healthCheck() async {
@@ -47,17 +53,25 @@ class AnimeVostVideoSource implements VideoSource {
 
   @override
   Future<List<SourceAnimeEntry>> search(String query, {int limit = 50}) async {
+    final value = query.trim();
+    if (value.isEmpty) return const [];
     try {
-      // AnimeVost uses DLE search: /index.php?do=search&subaction=search&q={query}
-      final response = await _dio.get(
-        '/index.php',
-        queryParameters: {
+      // AnimeVost's DLE search only works with a POSTed `story` field.
+      final response = await _dio.post<String>(
+        '/index.php?do=search',
+        data: {
           'do': 'search',
           'subaction': 'search',
-          'q': query,
+          'story': value,
+          'full_search': '0',
+          'result_from': '1',
         },
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          responseType: ResponseType.plain,
+        ),
       );
-      return _parseSearchResults(response.data, limit);
+      return _parseSearchResults(response.data ?? '', limit);
     } catch (_) {
       return const [];
     }
@@ -67,55 +81,79 @@ class AnimeVostVideoSource implements VideoSource {
     final results = <SourceAnimeEntry>[];
     try {
       final document = html_parser.parse(html);
-      // DLE search results typically in .shortstory or similar
-      final items = document.querySelectorAll('.shortstory, .news-item, .article, [class*="story"]');
-      
+      final items = document.querySelectorAll('.shortstory');
       for (final item in items.take(limit)) {
-        final titleEl = item.querySelector('h2 a, h3 a, .title a, a[href*="/tip/"]');
-        final linkEl = item.querySelector('a[href*="/tip/"]');
-        final imgEl = item.querySelector('img');
-        
-        if (titleEl == null || linkEl == null) continue;
-        
-        final href = linkEl.attributes['href'];
-        if (href == null) continue;
-        
-        final externalId = _extractId(href);
-        if (externalId.isEmpty) continue;
-        
-        final title = titleEl.text.trim();
-        final posterUrl = imgEl?.attributes['src'] ?? imgEl?.attributes['data-src'];
-        
-        results.add(SourceAnimeEntry(
-          sourceId: sourceId,
-          externalId: externalId,
-          title: title,
-          russianTitle: title,
-          posterUrl: (posterUrl?.isNotEmpty ?? false) ? _resolveUrl(posterUrl!) : null,
-        ));
+        final link = item.querySelector('.shortstoryHead h2 a, h2 a');
+        final href = link?.attributes['href'];
+        if (link == null || href == null || href.isEmpty) continue;
+
+        final rawTitle = link.text.trim();
+        final blockText = item.text;
+        final year = _firstInt(
+          RegExp(r'Год выхода:\s*(\d{4})').firstMatch(blockText)?.group(1),
+        );
+        final kind = RegExp(r'Тип:\s*([^\n]+)')
+            .firstMatch(blockText)
+            ?.group(1)
+            ?.trim();
+        final episodes = _firstInt(
+          RegExp(r'Количество серий:\s*(\d+)').firstMatch(blockText)?.group(1),
+        );
+        final img = item.querySelector('.shortstoryContent img, img');
+        final poster = img?.attributes['src'] ?? img?.attributes['data-src'];
+
+        final russianTitle = _cleanSearchTitle(rawTitle);
+        results.add(
+          SourceAnimeEntry(
+            sourceId: sourceId,
+            externalId: _absoluteUrl(href),
+            title: rawTitle,
+            russianTitle: russianTitle,
+            posterUrl: poster == null ? null : _resolveUrl(poster),
+            year: year,
+            kind: kind,
+            episodes: episodes,
+            status: null,
+            score: null,
+          ),
+        );
       }
-    } catch (_) {}
+    } catch (_) {
+      // Scraping failures are non-fatal: the source simply has no results.
+    }
     return results;
   }
 
-  String _extractId(String href) {
-    // Extract ID from URLs like /tip/tv/3988-name.html or /3988-name.html
-    final matches = RegExp(r'/(\d+)[-/]').firstMatch(href);
-    return matches?.group(1) ?? '';
+  String _cleanSearchTitle(String raw) {
+    var title = raw;
+    final slash = title.indexOf(' / ');
+    if (slash > 0) title = title.substring(0, slash);
+    title = title.replaceAll(RegExp(r'\[[^\]]*\]'), '').trim();
+    return title;
+  }
+
+  int? _firstInt(String? value) => value == null ? null : int.tryParse(value);
+
+  String _absoluteUrl(String href) {
+    if (href.startsWith('http')) return href;
+    if (href.startsWith('//')) return 'https:$href';
+    return 'https://animevost.org${href.startsWith('/') ? '' : '/'}$href';
   }
 
   String _resolveUrl(String url) {
     if (url.startsWith('http')) return url;
     if (url.startsWith('//')) return 'https:$url';
-    return 'https://animevost.org$url';
+    return 'https://animevost.org${url.startsWith('/') ? '' : '/'}$url';
   }
 
   @override
   Future<SourceAnimeDetails?> getDetails(String externalId) async {
     try {
-      // AnimeVost episode page: /tip/tv/{id}-name.html
-      final response = await _dio.get('/tip/tv/$externalId.html');
-      return _parseDetails(externalId, response.data);
+      final response = await _dio.get<String>(
+        _absoluteUrl(externalId),
+        options: Options(responseType: ResponseType.plain),
+      );
+      return _parseDetails(externalId, response.data ?? '');
     } catch (_) {
       return null;
     }
@@ -124,68 +162,54 @@ class AnimeVostVideoSource implements VideoSource {
   SourceAnimeDetails? _parseDetails(String externalId, String html) {
     try {
       final document = html_parser.parse(html);
-      
-      final titleEl = document.querySelector('h1, .title, .news-title');
-      final title = titleEl?.text.trim() ?? '';
-      
-      final descEl = document.querySelector('.full-text, .description, .story-content, [class*="description"]');
-      final description = descEl?.text.trim();
-      
-      final imgEl = document.querySelector('.poster img, .poster-image img, .news-image img');
-      final posterUrl = imgEl?.attributes['src'] ?? imgEl?.attributes['data-src'];
-      
-      // Parse genres, year, etc. from info block
-      String? year;
-      String? kind;
-      String? status;
-      
-      final infoBlocks = document.querySelectorAll('.info-block, .anime-info, [class*="info"] li');
-      for (final block in infoBlocks) {
-        final text = block.text.toLowerCase();
-        if (text.contains('год') || text.contains('year')) {
-          year = _extractValue(text);
-        } else if (text.contains('тип') || text.contains('type')) {
-          kind = _extractValue(text);
-        } else if (text.contains('статус') || text.contains('status')) {
-          status = _extractValue(text);
-        }
-      }
-      
-      // Parse episodes from player/playlist
-      final episodes = <SourceEpisode>[];
-      final playerScripts = document.querySelectorAll('script');
-      for (final script in playerScripts) {
-        final content = script.text;
-        if (content.contains('playlist') || content.contains('episodes') || content.contains('series')) {
-          // Try to extract episode data from JS
-          final eps = _extractEpisodes(content);
-          episodes.addAll(eps);
-        }
-      }
-      
-      // Also check for iframe players
-      final iframes = document.querySelectorAll('iframe[src*="player"], iframe[src*="video"]');
-      for (final iframe in iframes) {
-        final src = iframe.attributes['src'];
-        if (src != null && src.isNotEmpty) {
-          episodes.add(SourceEpisode(
-            externalId: 'iframe_${episodes.length}',
-            ordinal: episodes.length + 1,
-            hlsUrls: {'auto': src},
-          ));
-        }
-      }
-      
+      final pageText = document.body?.text ?? '';
+
+      final ogTitle = document
+          .querySelector('meta[property="og:title"]')
+          ?.attributes['content'];
+      final heading = document.querySelector('h1')?.text.trim();
+      final rawTitle = _stripSiteSuffix(ogTitle ?? heading ?? '');
+      final russianTitle = _cleanSearchTitle(rawTitle);
+
+      final ogImage = document
+          .querySelector('meta[property="og:image"]')
+          ?.attributes['content'];
+      final poster = ogImage ?? document.querySelector('img')?.attributes['src'];
+
+      final description =
+          document
+              .querySelector('meta[property="og:description"]')
+              ?.attributes['content']
+              ?.trim() ??
+          document.querySelector('.full-text')?.text.trim();
+
+      final year = _firstInt(
+        RegExp(r'Год выхода:\s*(\d{4})').firstMatch(pageText)?.group(1),
+      );
+      final kind = RegExp(r'Тип:\s*([^\n]+)')
+          .firstMatch(pageText)
+          ?.group(1)
+          ?.trim();
+      final score = double.tryParse(
+        RegExp(r'Рейтинг:\s*([\d.]+)').firstMatch(pageText)?.group(1) ?? '',
+      );
+
+      final episodes = parseAnimeVostEpisodes(html);
+
       return SourceAnimeDetails(
         sourceId: sourceId,
         externalId: externalId,
-        title: '',
-        russianTitle: title,
+        title: rawTitle,
+        russianTitle: russianTitle,
         description: description,
-        posterUrl: posterUrl != null ? 'https://animevost.org$posterUrl' : null,
+        posterUrl: poster == null ? null : _resolveUrl(poster),
+        backgroundUrl: poster == null ? null : _resolveUrl(poster),
+        year: year,
         kind: kind,
-        status: status,
-        year: int.tryParse(year ?? ''),
+        status: null,
+        episodes: episodes.length,
+        score: score?.toString(),
+        genres: _parseGenres(pageText),
         episodesList: episodes,
       );
     } catch (_) {
@@ -193,38 +217,20 @@ class AnimeVostVideoSource implements VideoSource {
     }
   }
 
-  String _extractValue(String text) {
-    final parts = text.split(':');
-    if (parts.length > 1) return parts[1].trim();
-    return text.trim();
+  String _stripSiteSuffix(String value) {
+    final marker = value.indexOf(' »');
+    return (marker > 0 ? value.substring(0, marker) : value).trim();
   }
 
-  List<SourceEpisode> _extractEpisodes(String jsContent) {
-    final episodes = <SourceEpisode>[];
-    try {
-      // Look for playlist arrays or episode data in JS
-      final playlistMatches = RegExp(r'playlist\s*[:=]\s*(\[[\s\S]*?\])').allMatches(jsContent);
-      for (final match in playlistMatches) {
-        final listStr = match.group(1);
-        if (listStr != null) {
-          // Try to parse as JSON-like - find URLs in the content
-          // Use a simpler regex that avoids quote escaping issues
-          final urlMatches = RegExp(r'https?://[^\s<>]+\.(m3u8|mp4)').allMatches(listStr);
-          int ord = 1;
-          for (final urlMatch in urlMatches) {
-            final url = urlMatch.group(0);
-            if (url != null && url.isNotEmpty) {
-              episodes.add(SourceEpisode(
-                externalId: 'parsed_$ord',
-                ordinal: ord++,
-                hlsUrls: {'auto': url},
-              ));
-            }
-          }
-        }
-      }
-    } catch (_) {}
-    return episodes;
+  List<String> _parseGenres(String pageText) {
+    final match = RegExp(r'Жанр:\s*([^\n]+)').firstMatch(pageText);
+    final value = match?.group(1)?.trim();
+    if (value == null || value.isEmpty) return const [];
+    return value
+        .split(',')
+        .map((genre) => genre.trim())
+        .where((genre) => genre.isNotEmpty)
+        .toList();
   }
 
   @override
@@ -235,8 +241,109 @@ class AnimeVostVideoSource implements VideoSource {
 
   @override
   Future<String?> getStreamUrl(String sourceEpisodeId, String quality) async {
-    // For AnimeVost, streams are embedded in episode data
+    final id = sourceEpisodeId.trim();
+    if (id.isEmpty) return null;
+    if (_streamCache.containsKey(id)) return _streamCache[id];
+
+    final url = await _resolveEpisodeStream(id);
+    _streamCache[id] = url;
+    return url;
+  }
+
+  Future<String?> _resolveEpisodeStream(String id) async {
+    // frame5 contains a list of working mirrors for the episode.
+    try {
+      final response = await _dio.get<String>(
+        '/frame5.php',
+        queryParameters: {'play': id},
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: {'Referer': 'https://animevost.org/'},
+        ),
+      );
+      final urls = _extractMp4Urls(response.data ?? '');
+      if (urls.isNotEmpty) return _pickBestUrl(urls);
+    } catch (_) {}
+
+    // getlink.php is a lighter fallback (one or two mirror URLs).
+    try {
+      final response = await _dio.get<String>(
+        '/getlink.php',
+        queryParameters: {'id': id},
+        options: Options(responseType: ResponseType.plain),
+      );
+      final urls = _extractMp4Urls(response.data ?? '');
+      if (urls.isNotEmpty) return _pickBestUrl(urls);
+    } catch (_) {}
     return null;
   }
 
+  List<String> _extractMp4Urls(String source) {
+    final matches = RegExp(
+      r'''https?://[^\s"'<>]+?\.mp4[^\s"'<>]*''',
+    ).allMatches(source);
+    final seen = <String>{};
+    final urls = <String>[];
+    for (final match in matches) {
+      final value = match.group(0)
+          ?.replaceAll('&amp;', '&')
+          .replaceAll(r'\u0026', '&');
+      if (value != null && value.isNotEmpty && seen.add(value)) urls.add(value);
+    }
+    return urls;
   }
+
+  String _pickBestUrl(List<String> urls) {
+    bool has(String value, String token) =>
+        value.toLowerCase().contains(token);
+    for (final url in urls) {
+      if (has(url, '/1080/') || has(url, '1080p')) return url;
+    }
+    for (final url in urls) {
+      if (has(url, '/720/') || has(url, 'hd.')) return url;
+    }
+    for (final url in urls) {
+      if (has(url, 'std.') || has(url, '/480/')) return url;
+    }
+    return urls.first;
+  }
+}
+
+/// Parses the inline episode map from an AnimeVost release page.
+///
+/// The page embeds ids as `var data = {"1 серия":"1451327130",...};`.
+/// Some releases include a trailing comma before the closing brace, which
+/// is not valid JSON and must be removed before decoding.
+List<SourceEpisode> parseAnimeVostEpisodes(String html) {
+  final episodes = <SourceEpisode>[];
+  try {
+    final match = RegExp(
+      r'var\s+data\s*=\s*(\{[\s\S]*?\})\s*;',
+      multiLine: true,
+    ).firstMatch(html);
+    if (match == null) return episodes;
+
+    final decoded = jsonDecode(
+      match.group(1)!.replaceAll(RegExp(r',\s*}'), '}'),
+    ) as Map<String, dynamic>;
+    var fallbackOrdinal = 0;
+    for (final entry in decoded.entries) {
+      fallbackOrdinal++;
+      final id = entry.value?.toString() ?? '';
+      if (id.isEmpty) continue;
+      final ordinal =
+          int.tryParse(RegExp(r'\d+').firstMatch(entry.key)?.group(0) ?? '') ??
+              fallbackOrdinal;
+      episodes.add(
+        SourceEpisode(
+          externalId: id,
+          ordinal: ordinal,
+          title: entry.key,
+          posterUrl: 'https://media.aniland.org/img/$id.jpg',
+        ),
+      );
+    }
+    episodes.sort((a, b) => a.ordinal.compareTo(b.ordinal));
+  } catch (_) {}
+  return episodes;
+}

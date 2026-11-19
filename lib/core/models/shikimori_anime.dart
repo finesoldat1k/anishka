@@ -52,22 +52,23 @@ class ShikimoriAnime {
   /// Display title (russian preferred).
   String get displayTitle => russian.isNotEmpty ? russian : name;
 
-  /// Poster URL for lists (preview size).
-  String? get posterUrl {
-    final url = ShikimoriConfig.imageUrl(image.preview);
-    return _isMissingPlaceholder(url) ? null : url;
-  }
+  /// Poster URL for lists (preview size, with graceful fallbacks).
+  String? get posterUrl => _bestImage([image.preview, image.x96, image.original, image.x48]);
 
-  /// Poster URL for details (original size).
-  String? get posterOriginalUrl {
-    final url = ShikimoriConfig.imageUrl(image.original);
-    return _isMissingPlaceholder(url) ? null : url;
-  }
+  /// Poster URL for details (original size, with graceful fallbacks).
+  String? get posterOriginalUrl =>
+      _bestImage([image.original, image.preview, image.x96, image.x48]);
 
   /// Background/fanart URL.
-  String? get backgroundUrl {
-    final url = ShikimoriConfig.imageUrl(image.original);
-    return _isMissingPlaceholder(url) ? null : url;
+  String? get backgroundUrl =>
+      _bestImage([image.original, image.preview, image.x96]);
+
+  String? _bestImage(List<String?> candidates) {
+    for (final candidate in candidates) {
+      final url = ShikimoriConfig.imageUrl(candidate);
+      if (!_isMissingPlaceholder(url)) return url;
+    }
+    return null;
   }
 
   bool _isMissingPlaceholder(String? url) {
@@ -153,6 +154,20 @@ class ShikimoriAnimeDetails {
     this.anilibriaPosterFallback,
     this.anilibriaBackgroundFallback,
     this.franchise,
+    this.trailerUrl,
+    this.trailerThumbnail,
+    this.trailerSite,
+    this.screenshots = const [],
+    this.metadataPoster,
+    this.metadataBackground,
+    this.metadataScore,
+    this.metadataYear,
+    this.metadataEpisodes,
+    this.metadataDuration,
+    this.metadataDescription,
+    this.metadataEnglishTitle,
+    this.metadataGenres = const [],
+    this.metadataStudios = const [],
   });
 
   final int id;
@@ -187,6 +202,30 @@ class ShikimoriAnimeDetails {
   /// Shikimori franchise identifier (e.g., "fullmetal_alchemist").
   final String? franchise;
 
+  /// Trailer URL (YouTube/Dailymotion watch link).
+  final String? trailerUrl;
+
+  /// Trailer thumbnail (YouTube preview or AniList image).
+  final String? trailerThumbnail;
+
+  /// Trailer hosting: youtube, dailymotion, etc.
+  final String? trailerSite;
+
+  /// Episode stills (Shikimori screenshots), full URLs.
+  final List<String> screenshots;
+
+  /// Fallback metadata merged from AniList/Kitsu when Shikimori is sparse.
+  final String? metadataPoster;
+  final String? metadataBackground;
+  final double? metadataScore;
+  final int? metadataYear;
+  final int? metadataEpisodes;
+  final int? metadataDuration;
+  final String? metadataDescription;
+  final String? metadataEnglishTitle;
+  final List<String> metadataGenres;
+  final List<String> metadataStudios;
+
   factory ShikimoriAnimeDetails.fromJson(Map<String, dynamic> json) {
     return ShikimoriAnimeDetails(
       id: json['id'] as int,
@@ -218,27 +257,39 @@ class ShikimoriAnimeDetails {
           ?.map((v) => ShikimoriVideo.fromJson(v as Map<String, dynamic>))
           .toList(),
       franchise: json['franchise'] as String?,
+      screenshots: (json['screenshots'] as List?)
+              ?.map((e) => e is Map<String, dynamic>
+                  ? ShikimoriConfig.imageUrl(e['original'] as String?)
+                  : null)
+              .whereType<String>()
+              .toList() ??
+          const [],
     );
   }
 
   String get displayTitle => russian.isNotEmpty ? russian : name;
 
-  String? get posterUrl {
-    final url = ShikimoriConfig.imageUrl(image.preview);
-    final shikimoriUrl = _isMissingPlaceholder(url) ? null : url;
-    return shikimoriUrl ?? anilibriaPosterFallback;
-  }
+  String? get posterUrl =>
+      _bestImage([image.preview, image.x96, image.original, image.x48]) ??
+      anilibriaPosterFallback ??
+      metadataPoster;
 
-  String? get posterOriginalUrl {
-    final url = ShikimoriConfig.imageUrl(image.original);
-    final shikimoriUrl = _isMissingPlaceholder(url) ? null : url;
-    return shikimoriUrl ?? anilibriaPosterFallback;
-  }
+  String? get posterOriginalUrl =>
+      _bestImage([image.original, image.preview, image.x96, image.x48]) ??
+      anilibriaPosterFallback ??
+      metadataPoster;
 
-  String? get backgroundUrl {
-    final url = ShikimoriConfig.imageUrl(image.original);
-    final shikimoriUrl = _isMissingPlaceholder(url) ? null : url;
-    return shikimoriUrl ?? anilibriaBackgroundFallback;
+  String? get backgroundUrl =>
+      _bestImage([image.original, image.preview, image.x96]) ??
+      anilibriaBackgroundFallback ??
+      metadataBackground;
+
+  String? _bestImage(List<String?> candidates) {
+    for (final candidate in candidates) {
+      final url = ShikimoriConfig.imageUrl(candidate);
+      if (!_isMissingPlaceholder(url)) return url;
+    }
+    return null;
   }
 
   bool _isMissingPlaceholder(String? url) {
@@ -247,8 +298,84 @@ class ShikimoriAnimeDetails {
   }
 
   int? get year {
-    if (airedOn == null) return null;
-    return int.tryParse(airedOn!.substring(0, 4));
+    if (airedOn != null && airedOn!.length >= 4) {
+      final parsed = int.tryParse(airedOn!.substring(0, 4));
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return metadataYear;
+  }
+
+  /// Score from Shikimori, falling back to AniList/Kitsu.
+  double? get scoreValue {
+    final parsed = double.tryParse(score);
+    if (parsed != null && parsed > 0) return parsed;
+    return metadataScore;
+  }
+
+  /// Full description, falling back to AniList/Kitsu when Shikimori has none.
+  String get descriptionText {
+    final value = description?.trim() ?? '';
+    if (value.isNotEmpty && !value.startsWith('нет описания')) return value;
+    return metadataDescription?.trim() ?? '';
+  }
+
+  /// English title, merged from all metadata providers.
+  String? get englishTitle {
+    if (english != null && english!.isNotEmpty) return english!.first;
+    final fallback = metadataEnglishTitle?.trim();
+    return fallback == null || fallback.isEmpty ? null : fallback;
+  }
+
+  /// All genre labels (Russian from Shikimori, otherwise AniList/Kitsu).
+  List<String> get allGenres {
+    final shikimoriGenres = genres
+            ?.map((g) => g.russian.isNotEmpty ? g.russian : g.name)
+            .where((value) => value.isNotEmpty)
+            .toList() ??
+        const <String>[];
+    if (shikimoriGenres.isNotEmpty) {
+      return _uniqueCaseInsensitive(shikimoriGenres);
+    }
+    return _uniqueCaseInsensitive(metadataGenres);
+  }
+
+  /// All studio names (Shikimori first, AniList/Kitsu as a fallback).
+  List<String> get allStudios {
+    final values = <String>[
+      ...?studios?.map((s) => s.name).where((value) => value.isNotEmpty),
+      ...metadataStudios.where((value) => value.isNotEmpty),
+    ];
+    return _uniqueCaseInsensitive(values);
+  }
+
+  int? get durationMinutes => duration ?? metadataDuration;
+
+  /// Parsed YouTube id from [trailerUrl].
+  String? get trailerYoutubeId {
+    final value = trailerUrl?.trim();
+    if (value == null || value.isEmpty) return null;
+    final uri = Uri.tryParse(value);
+    if (uri == null) return null;
+    final host = uri.host.toLowerCase();
+    if (host.contains('youtu.be')) {
+      return uri.pathSegments.isEmpty ? null : uri.pathSegments.first;
+    }
+    if (host.contains('youtube.com') || host.contains('youtube-nocookie.com')) {
+      final queryId = uri.queryParameters['v'];
+      if (queryId != null && queryId.isNotEmpty) return queryId;
+      final segments = uri.pathSegments;
+      if (segments.length >= 2 &&
+          (segments.first == 'embed' || segments.first == 'shorts')) {
+        return segments[1];
+      }
+    }
+    return null;
+  }
+
+  /// Best available still for compact visuals.
+  String? get stillUrl {
+    if (screenshots.isNotEmpty) return screenshots.first;
+    return trailerThumbnail ?? backgroundUrl ?? posterOriginalUrl;
   }
 
   String get statusLabel => switch (status) {
@@ -300,6 +427,20 @@ class ShikimoriAnimeDetails {
     anilibriaPosterFallback: null,
     anilibriaBackgroundFallback: null,
     franchise: null,
+    trailerUrl: null,
+    trailerThumbnail: null,
+    trailerSite: null,
+    screenshots: [],
+    metadataPoster: null,
+    metadataBackground: null,
+    metadataScore: null,
+    metadataYear: null,
+    metadataEpisodes: null,
+    metadataDuration: null,
+    metadataDescription: null,
+    metadataEnglishTitle: null,
+    metadataGenres: [],
+    metadataStudios: [],
   );
 
   ShikimoriAnimeDetails copyWith({
@@ -328,6 +469,20 @@ class ShikimoriAnimeDetails {
     String? anilibriaPosterFallback,
     String? anilibriaBackgroundFallback,
     String? franchise,
+    String? trailerUrl,
+    String? trailerThumbnail,
+    String? trailerSite,
+    List<String>? screenshots,
+    String? metadataPoster,
+    String? metadataBackground,
+    double? metadataScore,
+    int? metadataYear,
+    int? metadataEpisodes,
+    int? metadataDuration,
+    String? metadataDescription,
+    String? metadataEnglishTitle,
+    List<String>? metadataGenres,
+    List<String>? metadataStudios,
   }) {
     return ShikimoriAnimeDetails(
       id: id ?? this.id,
@@ -355,6 +510,20 @@ class ShikimoriAnimeDetails {
       anilibriaPosterFallback: anilibriaPosterFallback ?? this.anilibriaPosterFallback,
       anilibriaBackgroundFallback: anilibriaBackgroundFallback ?? this.anilibriaBackgroundFallback,
       franchise: franchise ?? this.franchise,
+      trailerUrl: trailerUrl ?? this.trailerUrl,
+      trailerThumbnail: trailerThumbnail ?? this.trailerThumbnail,
+      trailerSite: trailerSite ?? this.trailerSite,
+      screenshots: screenshots ?? this.screenshots,
+      metadataPoster: metadataPoster ?? this.metadataPoster,
+      metadataBackground: metadataBackground ?? this.metadataBackground,
+      metadataScore: metadataScore ?? this.metadataScore,
+      metadataYear: metadataYear ?? this.metadataYear,
+      metadataEpisodes: metadataEpisodes ?? this.metadataEpisodes,
+      metadataDuration: metadataDuration ?? this.metadataDuration,
+      metadataDescription: metadataDescription ?? this.metadataDescription,
+      metadataEnglishTitle: metadataEnglishTitle ?? this.metadataEnglishTitle,
+      metadataGenres: metadataGenres ?? this.metadataGenres,
+      metadataStudios: metadataStudios ?? this.metadataStudios,
     );
   }
 }
@@ -414,4 +583,13 @@ class ShikimoriVideo {
       hosting: (json['hosting'] as String? ?? '').lc,
     );
   }
+}
+/// Deduplicates labels while ignoring case, preserving the first spelling.
+List<String> _uniqueCaseInsensitive(Iterable<String> values) {
+  final seen = <String>{};
+  final result = <String>[];
+  for (final value in values) {
+    if (seen.add(value.toLowerCase())) result.add(value);
+  }
+  return result;
 }

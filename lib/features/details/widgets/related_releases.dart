@@ -4,73 +4,91 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
 import '../../../ui/widgets/anime_card.dart';
-import '../../../ui/widgets/section_header.dart';
+import '../../../ui/widgets/gradient_button.dart';
 
-class RelatedReleases extends StatefulWidget {
+class RelatedReleases extends StatelessWidget {
   const RelatedReleases({
     super.key,
     required this.items,
     required this.onOpen,
+    required this.onViewAll,
     required this.compact,
+    this.shikimoriId,
+    this.title,
   });
 
   final List<dynamic> items;
   final void Function(dynamic anime) onOpen;
+  final VoidCallback onViewAll;
   final bool compact;
-
-  @override
-  State<RelatedReleases> createState() => _RelatedReleasesState();
-}
-
-class _RelatedReleasesState extends State<RelatedReleases> {
-  final _controller = ScrollController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _scroll(double delta) {
-    if (!_controller.hasClients) return;
-    _controller.animateTo(
-      (_controller.offset + delta)
-          .clamp(0.0, _controller.position.maxScrollExtent)
-          .toDouble(),
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-    );
-  }
+  final int? shikimoriId;
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
-    final items = widget.items;
+    final hasItems = items.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionHeader(
-          title: 'связанные релизы',
-          subtitle: items.isEmpty
-              ? 'пока ничего не связано с этим релизом'
-              : '${releasesLabel(items.length)} · вся история в одном месте',
-          trailing: widget.compact || items.length < 4
-              ? null
-              : Row(
-                  children: [
-                    _ScrollArrow(
-                      icon: Icons.chevron_left_rounded,
-                      onTap: () => _scroll(-360),
-                    ),
-                    const SizedBox(width: 7),
-                    _ScrollArrow(
-                      icon: Icons.chevron_right_rounded,
-                      onTap: () => _scroll(360),
-                    ),
-                  ],
+        // Section header with "смотреть все" button
+        Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppColors.planned.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.planned.withValues(alpha: 0.22),
                 ),
+              ),
+              child: Icon(Icons.link_rounded, size: 17, color: AppColors.planned),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'связанные релизы',
+                    style: TextStyle(
+                      fontFamily: AppFonts.display,
+                      fontWeight: FontWeight.w600,
+                      fontSize: compact ? 15 : 17,
+                      letterSpacing: -0.4,
+                      color: AppColors.text,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasItems
+                        ? '${releasesLabel(items.length)} · вся история по порядку'
+                        : 'пока ничего не связано с этим релизом',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: AppFonts.body,
+                      fontSize: 10.5,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (hasItems && !compact)
+              GradientButton(
+                label: 'смотреть все',
+                icon: Icons.arrow_forward_rounded,
+                onTap: onViewAll,
+                ghost: true,
+                height: 36,
+              ),
+          ],
         ),
         const SizedBox(height: 16),
-        if (items.isEmpty)
+        if (!hasItems)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
@@ -86,15 +104,15 @@ class _RelatedReleasesState extends State<RelatedReleases> {
                   height: 40,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: AppColors.accent.withValues(alpha: 0.10),
+                    color: AppColors.planned.withValues(alpha: 0.10),
                     border: Border.all(
-                      color: AppColors.accent.withValues(alpha: 0.2),
+                      color: AppColors.planned.withValues(alpha: 0.2),
                     ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.link_off_rounded,
                     size: 19,
-                    color: AppColors.accentBright,
+                    color: AppColors.planned,
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -112,55 +130,25 @@ class _RelatedReleasesState extends State<RelatedReleases> {
             ),
           )
         else
-          SizedBox(
-            height: 296,
-            child: Scrollbar(
-              controller: _controller,
-              child: ListView.separated(
-                controller: _controller,
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                itemCount: items.length,
-                separatorBuilder: (context, index) => const SizedBox(width: 14),
-                itemBuilder: (context, index) {
-                  final anime = items[index];
-                  return SizedBox(
-                    width: 150,
-                    child: AnimeCard(
-                      anime: anime,
-                      dense: true,
-                      onTap: () => widget.onOpen(anime),
-                    ),
-                  );
-                },
-              ),
-            ),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 14),
+            itemBuilder: (context, index) {
+              final anime = items[index];
+              return SizedBox(
+                width: 150,
+                child: AnimeCard(
+                  anime: anime,
+                  dense: true,
+                  onTap: () => onOpen(anime),
+                ),
+              );
+            },
           ),
       ],
-    );
-  }
-}
-
-class _ScrollArrow extends StatelessWidget {
-  const _ScrollArrow({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface.withValues(alpha: 0.8),
-      shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 32,
-          height: 32,
-          child: Icon(icon, size: 18, color: AppColors.textSoft),
-        ),
-      ),
     );
   }
 }

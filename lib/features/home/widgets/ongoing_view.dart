@@ -6,17 +6,20 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/errors.dart';
 import '../../../core/utils/format.dart';
 import '../../../ui/widgets/anime_card.dart';
-import '../../../ui/widgets/gradient_button.dart';
+import '../../../ui/widgets/anime_list_tile.dart';
 import '../../../ui/widgets/section_header.dart';
 import '../../../ui/widgets/skeleton.dart';
-import '../../../ui/widgets/source_note.dart';
 import '../../../ui/widgets/state_views.dart';
-import 'featured_hero.dart';
 
 class OngoingView extends StatefulWidget {
-  const OngoingView({super.key, required this.onOpen});
+  const OngoingView({
+    super.key,
+    required this.onOpen,
+    required this.grid,
+  });
 
   final void Function(dynamic anime) onOpen;
+  final bool grid;
 
   @override
   State<OngoingView> createState() => _OngoingViewState();
@@ -27,11 +30,7 @@ class _OngoingViewState extends State<OngoingView> {
   final List<dynamic> _items = [];
   bool _loading = true;
   bool _refreshing = false;
-  final bool _loadingMore = false;
   String? _error;
-  int _page = 1;
-  int _totalPages = 1;
-  int _total = 0;
 
   @override
   void initState() {
@@ -53,7 +52,7 @@ class _OngoingViewState extends State<OngoingView> {
     try {
       final list = await _repository.getPopular(
         refresh: refresh,
-        limit: 24,
+        limit: 42,
         status: 'ongoing',
         order: 'popularity',
       );
@@ -62,9 +61,6 @@ class _OngoingViewState extends State<OngoingView> {
         _items
           ..clear()
           ..addAll(list);
-        _page = 1;
-        _totalPages = 1; // Shikimori doesn't paginate the same way
-        _total = list.length;
         _error = null;
       });
     } catch (error) {
@@ -83,11 +79,6 @@ class _OngoingViewState extends State<OngoingView> {
         });
       }
     }
-  }
-
-  Future<void> _loadMore() async {
-    // Shikimori doesn't have the same pagination for popular/ongoing
-    // Could implement offset-based if needed
   }
 
   @override
@@ -127,45 +118,24 @@ class _OngoingViewState extends State<OngoingView> {
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 30),
-                  child: FeaturedHero(
-                    items: _items.take(3).toList(),
-                    onOpen: widget.onOpen,
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: SectionHeader(
-                  title: 'сейчас в эфире',
-                  subtitle: _total > 0
-                      ? '${releasesLabel(_total)} · данные с shikimori'
-                      : 'текущие онгоинги',
-                  compact: compact,
-                  trailing: _RefreshButton(
-                    busy: _refreshing,
-                    onTap: () => _load(refresh: true),
-                  ),
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 18)),
-              SliverAnimeGrid(items: _items, onTap: widget.onOpen),
-              if (_page < _totalPages)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 28),
-                    child: Center(
-                      child: GradientButton(
-                        label: _loadingMore ? 'загружаем...' : 'показать ещё',
-                        icon: _loadingMore
-                            ? Icons.hourglass_top_rounded
-                            : Icons.expand_more_rounded,
-                        ghost: true,
-                        onTap: _loadingMore ? null : _loadMore,
-                      ),
+                  padding: const EdgeInsets.only(top: 6, bottom: 18),
+                  child: SectionHeader(
+                    title: 'сейчас в эфире',
+                    subtitle:
+                        '${releasesLabel(_items.length)} · данные с shikimori',
+                    compact: compact,
+                    trailing: _RefreshButton(
+                      busy: _refreshing,
+                      onTap: () => _load(refresh: true),
                     ),
                   ),
                 ),
-              const SliverToBoxAdapter(child: SourceNote()),
+              ),
+              if (widget.grid)
+                SliverAnimeGrid(items: _items, onTap: widget.onOpen)
+              else
+                SliverAnimeList(items: _items, onTap: widget.onOpen),
+              const SliverToBoxAdapter(child: SizedBox(height: 28)),
             ],
           ),
         );
@@ -217,18 +187,9 @@ class _OngoingSkeleton extends StatelessWidget {
         return CustomScrollView(
           physics: const NeverScrollableScrollPhysics(),
           slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 30),
-                child: SkeletonBox(
-                  height: compact ? 360 : 430,
-                  borderRadius: 24,
-                ),
-              ),
-            ),
             const SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.only(bottom: 18),
+                padding: EdgeInsets.only(top: 6, bottom: 18),
                 child: Row(
                   children: [
                     SkeletonBox(width: 3, height: 22, borderRadius: 99),
@@ -238,7 +199,7 @@ class _OngoingSkeleton extends StatelessWidget {
                 ),
               ),
             ),
-            const SliverAnimeGridSkeleton(count: 12),
+            SliverAnimeGridSkeleton(count: compact ? 6 : 12),
             const SliverToBoxAdapter(child: SizedBox(height: 48)),
           ],
         );

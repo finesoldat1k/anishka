@@ -194,9 +194,7 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
   String _voiceSubtitle(VoiceoverInfo voice) {
     final subtitle = voice.subtitle.trim();
     if (voice is AniLibriaVoiceover) {
-      return subtitle.isEmpty
-          ? 'озвучка · anilibria'
-          : '${subtitle.toLowerCase()} · anilibria';
+      return subtitle.isEmpty ? 'озвучка студии · anilibria' : subtitle;
     }
     return subtitle.isEmpty ? voice.source : subtitle;
   }

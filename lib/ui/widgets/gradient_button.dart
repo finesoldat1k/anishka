@@ -3,6 +3,19 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 
+/// Semantic colour of an action. Grey is the resting state; the tone only
+/// becomes visible when the action is active or hovered.
+enum GradientButtonTone {
+  neutral,
+  play,
+  favorite,
+  planned,
+  watching,
+  completed,
+  danger,
+  trailer,
+}
+
 class GradientButton extends StatefulWidget {
   const GradientButton({
     super.key,
@@ -11,6 +24,9 @@ class GradientButton extends StatefulWidget {
     this.onTap,
     this.expand = false,
     this.ghost = false,
+    this.primary = false,
+    this.tone = GradientButtonTone.neutral,
+    this.active = false,
     this.height = 48,
     this.badge,
   });
@@ -20,6 +36,11 @@ class GradientButton extends StatefulWidget {
   final VoidCallback? onTap;
   final bool expand;
   final bool ghost;
+
+  /// High-emphasis neutral button (used for the main "play" action).
+  final bool primary;
+  final GradientButtonTone tone;
+  final bool active;
   final double height;
   final Widget? badge;
 
@@ -30,15 +51,37 @@ class GradientButton extends StatefulWidget {
 class _GradientButtonState extends State<GradientButton> {
   bool _hovered = false;
 
+  Color get _toneColor => switch (widget.tone) {
+    GradientButtonTone.play => AppColors.watching,
+    GradientButtonTone.favorite => AppColors.favorite,
+    GradientButtonTone.planned => AppColors.planned,
+    GradientButtonTone.watching => AppColors.watching,
+    GradientButtonTone.completed => AppColors.completed,
+    GradientButtonTone.danger => AppColors.danger,
+    GradientButtonTone.trailer => AppColors.trailer,
+    GradientButtonTone.neutral => AppColors.accent,
+  };
+
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
+    final tone = _toneColor;
+    final useTone = widget.active || _hovered;
+    final primary = widget.primary && !widget.ghost;
+
+    final foreground = primary
+        ? (useTone && widget.active ? AppColors.background : AppColors.background)
+        : useTone
+        ? tone
+        : AppColors.text;
+    final iconColor = primary ? AppColors.background : foreground;
+
     final content = Row(
       mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (widget.icon != null) ...[
-          Icon(widget.icon, size: 18, color: Colors.white),
+          Icon(widget.icon, size: 18, color: iconColor),
           const SizedBox(width: 9),
         ],
         Flexible(
@@ -46,12 +89,12 @@ class _GradientButtonState extends State<GradientButton> {
             widget.label.toLowerCase(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: AppFonts.body,
               fontWeight: FontWeight.w600,
               fontSize: 13,
               letterSpacing: 0.1,
-              color: Colors.white,
+              color: foreground,
             ),
           ),
         ),
@@ -59,40 +102,32 @@ class _GradientButtonState extends State<GradientButton> {
       ],
     );
 
-    final decoration = widget.ghost
-        ? BoxDecoration(
-            color: _hovered ? AppColors.surfaceHigh : AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: _hovered
-                  ? AppColors.accent.withValues(alpha: 0.45)
-                  : AppColors.borderStrong,
-            ),
-            boxShadow: _hovered
-                ? [
-                    BoxShadow(
-                      color: AppColors.accent.withValues(alpha: 0.10),
-                      blurRadius: 24,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : null,
-          )
-        : BoxDecoration(
-            gradient: AppColors.accentGradient,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
+    final decoration = BoxDecoration(
+      color: primary
+          ? (useTone ? const Color(0xFFE4E4E7) : AppColors.text)
+          : widget.active
+          ? tone.withValues(alpha: 0.14)
+          : _hovered
+          ? AppColors.surfaceSoft
+          : AppColors.surfaceHigh,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(
+        color: widget.active
+            ? tone.withValues(alpha: 0.48)
+            : _hovered
+            ? tone.withValues(alpha: 0.30)
+            : AppColors.borderStrong,
+      ),
+      boxShadow: primary && _hovered
+          ? [
               BoxShadow(
-                color: AppColors.accent.withValues(
-                  alpha: _hovered ? 0.42 : 0.24,
-                ),
-                blurRadius: _hovered ? 28 : 18,
-                spreadRadius: _hovered ? 3 : 1,
-                offset: const Offset(0, 7),
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
               ),
-            ],
-            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-          );
+            ]
+          : null,
+    );
 
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,

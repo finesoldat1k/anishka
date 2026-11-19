@@ -1,21 +1,19 @@
-import 'dart:async';
-
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/anime_release.dart';
 import '../../core/models/shikimori_anime.dart';
-import '../../core/repository/anime_repository.dart';
 import '../../core/storage/library_store.dart';
-import '../../core/utils/errors.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/utils/layout.dart';
+import '../../ui/widgets/view_toggle.dart';
 import 'home_tab.dart';
 import 'widgets/home_header.dart';
 import 'widgets/home_tabs.dart';
 import 'widgets/library_view.dart';
 import 'widgets/ongoing_view.dart';
-import 'widgets/search_view.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,97 +23,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _searchController = TextEditingController();
-  final _searchFocus = FocusNode();
-  Timer? _debounce;
-  int _searchRequest = 0;
-
   HomeTab _tab = HomeTab.airing;
-  String _query = '';
-  List<dynamic> _results = const [];
-  bool _searchLoading = false;
-  String? _searchError;
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _searchController.dispose();
-    _searchFocus.dispose();
-    super.dispose();
-  }
-
-  void _onQueryChanged(String value) {
-    _debounce?.cancel();
-    final query = value.trim();
-    if (query.isEmpty) {
-      _searchRequest++;
-      setState(() {
-        _query = '';
-        _results = const [];
-        _searchLoading = false;
-        _searchError = null;
-      });
-      return;
-    }
-
-    setState(() {
-      _query = query;
-      _searchLoading = true;
-      _searchError = null;
-    });
-    _debounce = Timer(const Duration(milliseconds: 380), () {
-      _runSearch(query);
-    });
-  }
-
-  void _onSubmitted(String value) {
-    _debounce?.cancel();
-    final query = value.trim();
-    if (query.isEmpty) return;
-    setState(() {
-      _query = query;
-      _searchLoading = true;
-      _searchError = null;
-    });
-    _runSearch(query);
-  }
-
-  Future<void> _runSearch(String query) async {
-    final token = ++_searchRequest;
-    final repository = context.read<AnimeRepository>();
-    try {
-      final results = await repository.searchShikimori(query);
-      if (!mounted || token != _searchRequest) return;
-      setState(() {
-        _results = results;
-        _searchLoading = false;
-        _searchError = null;
-      });
-    } catch (error) {
-      if (!mounted || token != _searchRequest) return;
-      setState(() {
-        _results = const [];
-        _searchLoading = false;
-        _searchError = userMessage(error);
-      });
-    }
-  }
-
-  void _clearSearch({bool keepFocus = false}) {
-    _debounce?.cancel();
-    _searchRequest++;
-    _searchController.clear();
-    if (!keepFocus) _searchFocus.unfocus();
-    setState(() {
-      _query = '';
-      _results = const [];
-      _searchLoading = false;
-      _searchError = null;
-    });
-  }
+  AnimeViewMode _mode = AnimeViewMode.grid;
 
   void _selectTab(HomeTab tab) {
-    if (_query.isNotEmpty) _clearSearch(keepFocus: false);
+    if (tab == _tab) return;
     setState(() => _tab = tab);
   }
 
@@ -123,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (anime is AnimeRelease) {
       context.push('/anime/${anime.id}');
     } else if (anime is ShikimoriAnime) {
-      // Navigate to details which will fetch sources
       context.push('/anime/shikimori/${anime.id}');
     }
   }
@@ -132,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final library = context.watch<LibraryStore>();
     final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 760;
     final padding = pagePadding(width);
 
     final counts = <HomeTab, int>{
@@ -141,54 +53,50 @@ class _HomeScreenState extends State<HomeScreen> {
       HomeTab.completed: library.countStatus(CollectionStatus.completed),
     };
 
-    final Widget content;
-    if (_query.isNotEmpty) {
-      content = SearchView(
-        key: const ValueKey('search'),
-        query: _query,
-        results: _results,
-        loading: _searchLoading,
-        error: _searchError,
-        onRetry: () => _runSearch(_query),
+    final content = switch (_tab) {
+      HomeTab.airing => OngoingView(
+        key: const ValueKey('airing'),
         onOpen: _openAnime,
-        onClear: _clearSearch,
-      );
-    } else {
-      content = switch (_tab) {
-        HomeTab.airing => OngoingView(
-          key: const ValueKey('airing'),
-          onOpen: _openAnime,
-        ),
-        HomeTab.favorites => LibraryView(
-          key: const ValueKey('favorites'),
-          tab: HomeTab.favorites,
-          entries: library.favorites(),
-          onOpen: _openAnime,
-          onBrowse: () => _selectTab(HomeTab.airing),
-        ),
-        HomeTab.watching => LibraryView(
-          key: const ValueKey('watching'),
-          tab: HomeTab.watching,
-          entries: library.byStatus(CollectionStatus.watching),
-          onOpen: _openAnime,
-          onBrowse: () => _selectTab(HomeTab.airing),
-        ),
-        HomeTab.planned => LibraryView(
-          key: const ValueKey('planned'),
-          tab: HomeTab.planned,
-          entries: library.byStatus(CollectionStatus.planned),
-          onOpen: _openAnime,
-          onBrowse: () => _selectTab(HomeTab.airing),
-        ),
-        HomeTab.completed => LibraryView(
-          key: const ValueKey('completed'),
-          tab: HomeTab.completed,
-          entries: library.byStatus(CollectionStatus.completed),
-          onOpen: _openAnime,
-          onBrowse: () => _selectTab(HomeTab.airing),
-        ),
-      };
-    }
+        grid: _mode == AnimeViewMode.grid,
+      ),
+      HomeTab.favorites => LibraryView(
+        key: const ValueKey('favorites'),
+        tab: HomeTab.favorites,
+        entries: library.favorites(),
+        onOpen: _openAnime,
+        onBrowse: () => _selectTab(HomeTab.airing),
+        grid: _mode == AnimeViewMode.grid,
+      ),
+      HomeTab.watching => LibraryView(
+        key: const ValueKey('watching'),
+        tab: HomeTab.watching,
+        entries: library.byStatus(CollectionStatus.watching),
+        onOpen: _openAnime,
+        onBrowse: () => _selectTab(HomeTab.airing),
+        grid: _mode == AnimeViewMode.grid,
+      ),
+      HomeTab.planned => LibraryView(
+        key: const ValueKey('planned'),
+        tab: HomeTab.planned,
+        entries: library.byStatus(CollectionStatus.planned),
+        onOpen: _openAnime,
+        onBrowse: () => _selectTab(HomeTab.airing),
+        grid: _mode == AnimeViewMode.grid,
+      ),
+      HomeTab.completed => LibraryView(
+        key: const ValueKey('completed'),
+        tab: HomeTab.completed,
+        entries: library.byStatus(CollectionStatus.completed),
+        onOpen: _openAnime,
+        onBrowse: () => _selectTab(HomeTab.airing),
+        grid: _mode == AnimeViewMode.grid,
+      ),
+    };
+
+    final viewToggle = ViewToggle(
+      mode: _mode,
+      onChanged: (mode) => setState(() => _mode = mode),
+    );
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -199,25 +107,57 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 Padding(
-                  padding: EdgeInsets.fromLTRB(padding, 18, padding, 10),
+                  padding: EdgeInsets.fromLTRB(padding, 16, padding, 12),
                   child: HomeHeader(
-                    controller: _searchController,
-                    focusNode: _searchFocus,
-                    onChanged: _onQueryChanged,
-                    onSubmitted: _onSubmitted,
-                    onClear: _clearSearch,
-                    loading: _searchLoading,
+                    compact: compact,
+                    onSearchTap: () => context.push('/search'),
+                    onAboutTap: () => context.push('/about'),
                   ),
                 ),
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: padding),
-                  child: HomeTabs(
-                    selected: _tab,
-                    onSelected: _selectTab,
-                    counts: counts,
-                  ),
+                  child: compact
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            HomeTabs(
+                              selected: _tab,
+                              onSelected: _selectTab,
+                              counts: counts,
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const SizedBox(width: 2),
+                                const Text(
+                                  'вид',
+                                  style: TextStyle(
+                                    fontFamily: AppFonts.body,
+                                    fontSize: 10.5,
+                                    color: AppColors.textFaint,
+                                  ),
+                                ),
+                                const Spacer(),
+                                viewToggle,
+                              ],
+                            ),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Expanded(
+                              child: HomeTabs(
+                                selected: _tab,
+                                onSelected: _selectTab,
+                                counts: counts,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            viewToggle,
+                          ],
+                        ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: padding),

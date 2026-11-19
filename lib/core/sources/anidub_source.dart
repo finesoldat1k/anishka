@@ -1,4 +1,4 @@
-// AniDub video source implementation (RSS + HTML parsing).
+// AniDub video source: DLE search and Sibnet-backed episodes.
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -14,26 +14,31 @@ class AniDubVideoSource implements VideoSource {
                 baseUrl: 'https://anidub.com',
                 connectTimeout: const Duration(seconds: 15),
                 receiveTimeout: const Duration(seconds: 30),
-                headers: {
-                  'User-Agent': 'anishka/1.0',
-                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                headers: const {
+                  'User-Agent':
+                      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                      '(KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+                  'Accept':
+                      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                  'Accept-Language': 'ru,en;q=0.8',
                 },
               ),
             );
 
   final Dio _dio;
+  final Map<String, String?> _streamCache = {};
 
   @override
   String get sourceId => 'anidub';
 
   @override
-  String get displayName => 'AniDub';
+  String get displayName => 'anidub';
 
   @override
-  int get priority => 3; // Third priority
+  int get priority => 3;
 
   @override
-  List<String> get availableQualities => const ['1080', '720', '480'];
+  List<String> get availableQualities => const ['auto'];
 
   @override
   Future<bool> healthCheck() async {
@@ -47,16 +52,24 @@ class AniDubVideoSource implements VideoSource {
 
   @override
   Future<List<SourceAnimeEntry>> search(String query, {int limit = 50}) async {
+    final value = query.trim();
+    if (value.isEmpty) return const [];
     try {
-      final response = await _dio.get(
-        '/index.php',
-        queryParameters: {
+      final response = await _dio.post<String>(
+        '/index.php?do=search',
+        data: {
           'do': 'search',
           'subaction': 'search',
-          'q': query,
+          'story': value,
+          'full_search': '0',
+          'result_from': '1',
         },
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          responseType: ResponseType.plain,
+        ),
       );
-      return _parseSearchResults(response.data, limit);
+      return _parseSearchResults(response.data ?? '', limit);
     } catch (_) {
       return const [];
     }
@@ -66,52 +79,71 @@ class AniDubVideoSource implements VideoSource {
     final results = <SourceAnimeEntry>[];
     try {
       final document = html_parser.parse(html);
-      final items = document.querySelectorAll('.shortstory, .news-item, .article, [class*="story"]');
-      
+      final items = document.querySelectorAll('.th-item');
       for (final item in items.take(limit)) {
-        final titleEl = item.querySelector('h2 a, h3 a, .title a, a[href*="/anime/"]');
-        final linkEl = item.querySelector('a[href*="/anime/"]');
-        final imgEl = item.querySelector('img');
-        
-        if (titleEl == null || linkEl == null) continue;
-        
-        final href = linkEl.attributes['href'];
-        if (href == null) continue;
-        
-        final externalId = _extractId(href);
-        if (externalId.isEmpty) continue;
-        
-        final title = titleEl.text.trim();
-        final posterUrl = imgEl?.attributes['src'] ?? imgEl?.attributes['data-src'];
-        
-        results.add(SourceAnimeEntry(
-          sourceId: sourceId,
-          externalId: externalId,
-          title: title,
-          russianTitle: title,
-          posterUrl: (posterUrl?.isNotEmpty ?? false) ? _resolveUrl(posterUrl!) : null,
-        ));
+        final link = item.querySelector('a.th-in');
+        final href = link?.attributes['href'];
+        if (link == null || href == null || href.isEmpty) continue;
+
+        final rawTitle = item.querySelector('.th-title')?.text.trim() ??
+            link.text.trim();
+        final subtitle = item.querySelector('.th-subtitle')?.text.trim();
+        final yearText = item
+            .querySelectorAll('.th-subtitle')
+            .map((node) => node.text)
+            .join(' ');
+        final yearMatch = RegExp(r'\b(19|20)\d{2}\b').firstMatch(yearText);
+        final rating = item.querySelector('.th-rating')?.text.trim();
+        final img = item.querySelector('.th-img img, img');
+        final poster = img?.attributes['src'] ?? img?.attributes['data-src'];
+
+        results.add(
+          SourceAnimeEntry(
+            sourceId: sourceId,
+            externalId: _absoluteUrl(href),
+            title: rawTitle,
+            russianTitle: _cleanTitle(rawTitle),
+            posterUrl: poster == null ? null : _resolveUrl(poster),
+            year: yearMatch == null ? null : int.tryParse(yearMatch.group(0)!),
+            kind: subtitle,
+            status: null,
+            episodes: null,
+            score: rating,
+          ),
+        );
       }
     } catch (_) {}
     return results;
   }
 
-  String _extractId(String href) {
-    final matches = RegExp(r'/(\d+)[-/]').firstMatch(href);
-    return matches?.group(1) ?? '';
+  String _cleanTitle(String raw) {
+    var title = raw;
+    final slash = title.indexOf(' / ');
+    if (slash > 0) title = title.substring(0, slash);
+    title = title.replaceAll(RegExp(r'\[[^\]]*\]'), '').trim();
+    return title;
+  }
+
+  String _absoluteUrl(String href) {
+    if (href.startsWith('http')) return href;
+    if (href.startsWith('//')) return 'https:$href';
+    return 'https://anidub.com${href.startsWith('/') ? '' : '/'}$href';
   }
 
   String _resolveUrl(String url) {
     if (url.startsWith('http')) return url;
     if (url.startsWith('//')) return 'https:$url';
-    return 'https://anidub.com$url';
+    return 'https://anidub.com${url.startsWith('/') ? '' : '/'}$url';
   }
 
   @override
   Future<SourceAnimeDetails?> getDetails(String externalId) async {
     try {
-      final response = await _dio.get('/anime/$externalId.html');
-      return _parseDetails(externalId, response.data);
+      final response = await _dio.get<String>(
+        _absoluteUrl(externalId),
+        options: Options(responseType: ResponseType.plain),
+      );
+      return _parseDetails(externalId, response.data ?? '');
     } catch (_) {
       return null;
     }
@@ -120,64 +152,54 @@ class AniDubVideoSource implements VideoSource {
   SourceAnimeDetails? _parseDetails(String externalId, String html) {
     try {
       final document = html_parser.parse(html);
-      
-      final titleEl = document.querySelector('h1, .title, .news-title');
-      final title = titleEl?.text.trim() ?? '';
-      
-      final descEl = document.querySelector('.full-text, .description, .story-content, [class*="description"]');
-      final description = descEl?.text.trim();
-      
-      final imgEl = document.querySelector('.poster img, .poster-image img, .news-image img');
-      final posterUrl = imgEl?.attributes['src'] ?? imgEl?.attributes['data-src'];
-      
-      String? year;
-      String? kind;
-      String? status;
-      
-      final infoBlocks = document.querySelectorAll('.info-block, .anime-info, [class*="info"] li, .short-info li');
-      for (final block in infoBlocks) {
-        final text = block.text.toLowerCase();
-        if (text.contains('год') || text.contains('year')) {
-          year = _extractValue(text);
-        } else if (text.contains('тип') || text.contains('type')) {
-          kind = _extractValue(text);
-        } else if (text.contains('статус') || text.contains('status')) {
-          status = _extractValue(text);
-        }
-      }
-      
-      final episodes = <SourceEpisode>[];
-      final scripts = document.querySelectorAll('script');
-      for (final script in scripts) {
-        final content = script.text;
-        if (content.contains('playlist') || content.contains('episodes') || content.contains('series')) {
-          final eps = _extractEpisodes(content);
-          episodes.addAll(eps);
-        }
-      }
-      
-      final iframes = document.querySelectorAll('iframe[src*="player"], iframe[src*="video"]');
-      for (final iframe in iframes) {
-        final src = iframe.attributes['src'];
-        if (src != null && src.isNotEmpty) {
-          episodes.add(SourceEpisode(
-            externalId: 'iframe_${episodes.length}',
-            ordinal: episodes.length + 1,
-            hlsUrls: {'auto': src},
-          ));
-        }
-      }
-      
+      final pageText = document.body?.text ?? '';
+
+      final ogTitle = document
+          .querySelector('meta[property="og:title"]')
+          ?.attributes['content'];
+      final heading = document.querySelector('h1')?.text.trim();
+      final rawTitle = (ogTitle ?? heading ?? '').trim();
+      final russianTitle = _cleanTitle(
+        rawTitle.replaceAll('Смотреть', '').replaceAll('онлайн', '').trim(),
+      );
+
+      final ogImage = document
+          .querySelector('meta[property="og:image"]')
+          ?.attributes['content'];
+      final poster = ogImage ?? document.querySelector('.fposter img, img')?.attributes['src'];
+
+      final description = document.querySelector('.fdesc')?.text.trim() ??
+          document
+              .querySelector('meta[property="og:description"]')
+              ?.attributes['content']
+              ?.trim();
+
+      final year = int.tryParse(
+        RegExp(r'Год выхода:\s*(\d{4})').firstMatch(pageText)?.group(1) ??
+            RegExp(r'\b(19|20)\d{2}\b').firstMatch(pageText)?.group(0) ??
+            '',
+      );
+      final kind = RegExp(r'Тип:\s*([^\n]+)')
+          .firstMatch(pageText)
+          ?.group(1)
+          ?.trim();
+
+      final episodes = _parseEpisodes(document);
+
       return SourceAnimeDetails(
         sourceId: sourceId,
         externalId: externalId,
-        title: '',
-        russianTitle: title,
+        title: rawTitle,
+        russianTitle: russianTitle,
         description: description,
-        posterUrl: posterUrl != null ? 'https://anidub.com$posterUrl' : null,
+        posterUrl: poster == null ? null : _resolveUrl(poster),
+        backgroundUrl: poster == null ? null : _resolveUrl(poster),
+        year: year,
         kind: kind,
-        status: status,
-        year: int.tryParse(year ?? ''),
+        status: null,
+        episodes: episodes.length,
+        score: null,
+        genres: _parseGenres(pageText),
         episodesList: episodes,
       );
     } catch (_) {
@@ -185,34 +207,42 @@ class AniDubVideoSource implements VideoSource {
     }
   }
 
-  String _extractValue(String text) {
-    final parts = text.split(':');
-    if (parts.length > 1) return parts[1].trim();
-    return text.trim();
+  List<String> _parseGenres(String pageText) {
+    final match = RegExp(r'Жанр:\s*([^\n]+)').firstMatch(pageText);
+    final value = match?.group(1)?.trim();
+    if (value == null || value.isEmpty) return const [];
+    return value
+        .split(',')
+        .map((genre) => genre.trim())
+        .where((genre) => genre.isNotEmpty)
+        .toList();
   }
 
-  List<SourceEpisode> _extractEpisodes(String jsContent) {
+  List<SourceEpisode> _parseEpisodes(dynamic document) {
     final episodes = <SourceEpisode>[];
     try {
-      final playlistMatches = RegExp(r'playlist\s*[:=]\s*(\[[\s\S]*?\])').allMatches(jsContent);
-      for (final match in playlistMatches) {
-        final listStr = match.group(1);
-        if (listStr != null) {
-          // Try to parse as JSON-like - find URLs in the content
-          final urlMatches = RegExp(r'https?://[^\s<>]+\.(m3u8|mp4)').allMatches(listStr);
-          int ord = 1;
-          for (final urlMatch in urlMatches) {
-            final url = urlMatch.group(0);
-            if (url != null && url.isNotEmpty) {
-              episodes.add(SourceEpisode(
-                externalId: 'parsed_$ord',
-                ordinal: ord++,
-                hlsUrls: {'auto': url},
-              ));
-            }
-          }
-        }
+      final spans = document.querySelectorAll('.tabs-sel span[data]') as List;
+      var fallbackOrdinal = 0;
+      for (final span in spans) {
+        fallbackOrdinal++;
+        final data = span.attributes['data'] as String?;
+        if (data == null || data.isEmpty) continue;
+        final label = span.text.trim();
+        final ordinal = int.tryParse(
+              RegExp(r'\d+').firstMatch(label)?.group(0) ?? '',
+            ) ??
+            fallbackOrdinal;
+        final sibnetId = RegExp(r'videoid=(\d+)').firstMatch(data)?.group(1);
+        if (sibnetId == null) continue;
+        episodes.add(
+          SourceEpisode(
+            externalId: sibnetId,
+            ordinal: ordinal,
+            title: label,
+          ),
+        );
       }
+      episodes.sort((a, b) => a.ordinal.compareTo(b.ordinal));
     } catch (_) {}
     return episodes;
   }
@@ -225,6 +255,55 @@ class AniDubVideoSource implements VideoSource {
 
   @override
   Future<String?> getStreamUrl(String sourceEpisodeId, String quality) async {
+    final id = sourceEpisodeId.trim();
+    if (id.isEmpty) return null;
+    if (_streamCache.containsKey(id)) return _streamCache[id];
+
+    final url = await _resolveSibnet(id);
+    _streamCache[id] = url;
+    return url;
+  }
+
+  Future<String?> _resolveSibnet(String videoId) async {
+    final candidates = [
+      'https://video.sibnet.ru/shell.php?videoid=$videoId',
+      'https://video.sibnet.ru/shell.php?videoid=$videoId&player=1',
+      'https://video.sibnet.ru/video$videoId/',
+    ];
+    for (final url in candidates) {
+      try {
+        final response = await _dio.get<String>(
+          url,
+          options: Options(
+            responseType: ResponseType.plain,
+            headers: {
+              'Referer': 'https://anidub.com/',
+              'Origin': 'https://anidub.com',
+              'Accept':
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+          ),
+        );
+        final urls = _extractVideoUrls(response.data ?? '');
+        if (urls.isNotEmpty) return urls.first;
+      } catch (_) {}
+    }
     return null;
+  }
+
+  List<String> _extractVideoUrls(String source) {
+    final matches = RegExp(
+      r'''https?:[^\s"'<>]+?\.(?:mp4|m3u8)[^\s"'<>]*''',
+    ).allMatches(source);
+    final seen = <String>{};
+    final urls = <String>[];
+    for (final match in matches) {
+      final value = match.group(0)
+          ?.replaceAll('&amp;', '&')
+          .replaceAll(r'\u0026', '&')
+          .replaceAll(r'\/', '/');
+      if (value != null && value.isNotEmpty && seen.add(value)) urls.add(value);
+    }
+    return urls;
   }
 }

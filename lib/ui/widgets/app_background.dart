@@ -41,17 +41,17 @@ class _AmbientPainter extends CustomPainter {
     glow(
       Offset(size.width * 0.08, -size.height * 0.12),
       math.max(size.width, size.height) * 0.75,
-      AppColors.accent.withValues(alpha: 0.16),
+      AppColors.planned.withValues(alpha: 0.16),
     );
     glow(
       Offset(size.width * 1.02, size.height * 0.24),
       math.max(size.width, size.height) * 0.58,
-      AppColors.accentDeep.withValues(alpha: 0.10),
+      AppColors.planned.withValues(alpha: 0.10),
     );
     glow(
       Offset(size.width * 0.42, size.height * 1.08),
       math.max(size.width, size.height) * 0.62,
-      const Color(0xFF5B21B6).withValues(alpha: 0.07),
+      AppColors.planned.withValues(alpha: 0.07),
     );
 
     final dotPaint = Paint()..color = const Color(0x08FFFFFF);

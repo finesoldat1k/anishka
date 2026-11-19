@@ -14,6 +14,8 @@ class AppImage extends StatelessWidget {
     this.height,
     this.alignment = Alignment.center,
     this.memCacheWidth,
+    this.fallbackLabel,
+    this.canvasOnly = false,
   });
 
   final String? url;
@@ -23,12 +25,20 @@ class AppImage extends StatelessWidget {
   final double? height;
   final Alignment alignment;
   final int? memCacheWidth;
+  final String? fallbackLabel;
+
+  /// On web, force a canvas-decoded image instead of an HTML `<img>`.
+  ///
+  /// Use this for images that sit inside a tappable card: an HTML platform
+  /// view would otherwise swallow the pointer event. Only use it for hosts
+  /// that send CORS headers (for example YouTube thumbnails).
+  final bool canvasOnly;
 
   @override
   Widget build(BuildContext context) {
     final image = url == null || url!.isEmpty
-        ? const _ImageFallback()
-        : kIsWeb
+        ? _ImageFallback(label: fallbackLabel)
+        : kIsWeb && !canvasOnly
         // постеры anilibria отдаются без access-control-allow-origin,
         // поэтому canvas-загрузка в web не работает. html <img> в этом
         // случае обходит cors и показывается как platform view.
@@ -38,6 +48,7 @@ class AppImage extends StatelessWidget {
             alignment: alignment,
             width: width,
             height: height,
+            fallbackLabel: fallbackLabel,
           )
         : CachedNetworkImage(
             imageUrl: url!,
@@ -49,7 +60,8 @@ class AppImage extends StatelessWidget {
             fadeInDuration: const Duration(milliseconds: 260),
             fadeOutDuration: const Duration(milliseconds: 120),
             placeholder: (context, url) => const _ImagePlaceholder(),
-            errorWidget: (context, url, error) => const _ImageFallback(),
+            errorWidget: (context, url, error) =>
+                _ImageFallback(label: fallbackLabel),
           );
 
     if (borderRadius == null) return image;
@@ -64,6 +76,7 @@ class _WebImage extends StatelessWidget {
     required this.alignment,
     this.width,
     this.height,
+    this.fallbackLabel,
   });
 
   final String url;
@@ -71,6 +84,7 @@ class _WebImage extends StatelessWidget {
   final Alignment alignment;
   final double? width;
   final double? height;
+  final String? fallbackLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +99,8 @@ class _WebImage extends StatelessWidget {
           width: width,
           height: height,
           webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
-          errorBuilder: (context, error, stackTrace) => const _ImageFallback(),
+          errorBuilder: (context, error, stackTrace) =>
+              _ImageFallback(label: fallbackLabel),
         ),
       ],
     );
@@ -115,10 +130,20 @@ class _ImagePlaceholder extends StatelessWidget {
 }
 
 class _ImageFallback extends StatelessWidget {
-  const _ImageFallback();
+  const _ImageFallback({this.label});
+
+  final String? label;
+
+  String? get _initial {
+    final value = label?.trim();
+    if (value == null || value.isEmpty) return null;
+    final match = RegExp(r'[a-zа-я0-9]', caseSensitive: false).firstMatch(value);
+    return match?.group(0)?.toUpperCase();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final initial = _initial;
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -127,12 +152,22 @@ class _ImageFallback extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
       ),
-      child: const Center(
-        child: Icon(
-          Icons.movie_filter_outlined,
-          color: AppColors.textFaint,
-          size: 28,
-        ),
+      child: Center(
+        child: initial == null
+            ? const Icon(
+                Icons.movie_filter_outlined,
+                color: AppColors.textFaint,
+                size: 28,
+              )
+            : Text(
+                initial,
+                style: const TextStyle(
+                  fontFamily: 'Unbounded',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 30,
+                  color: AppColors.textFaint,
+                ),
+              ),
       ),
     );
   }

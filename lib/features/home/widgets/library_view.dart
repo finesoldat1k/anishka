@@ -3,8 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../../core/storage/library_store.dart';
 import '../../../core/utils/format.dart';
 import '../../../ui/widgets/anime_card.dart';
+import '../../../ui/widgets/anime_list_tile.dart';
 import '../../../ui/widgets/section_header.dart';
-import '../../../ui/widgets/source_note.dart';
 import '../../../ui/widgets/state_views.dart';
 import '../home_tab.dart';
 
@@ -15,12 +15,14 @@ class LibraryView extends StatelessWidget {
     required this.entries,
     required this.onOpen,
     required this.onBrowse,
+    required this.grid,
   });
 
   final HomeTab tab;
   final List<LibraryEntry> entries;
   final void Function(dynamic anime) onOpen;
   final VoidCallback onBrowse;
+  final bool grid;
 
   EmptyState _empty() {
     final (icon, title, message) = switch (tab) {
@@ -71,7 +73,7 @@ class LibraryView extends StatelessWidget {
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 20),
+            padding: const EdgeInsets.only(top: 6, bottom: 18),
             child: SectionHeader(
               title: tab.label,
               subtitle: count == 0
@@ -82,10 +84,11 @@ class LibraryView extends StatelessWidget {
         ),
         if (items.isEmpty)
           SliverFillRemaining(hasScrollBody: false, child: _empty())
-        else ...[
-          SliverAnimeGrid(items: items, onTap: onOpen),
-          const SliverToBoxAdapter(child: SourceNote()),
-        ],
+        else if (grid)
+          SliverAnimeGrid(items: items, onTap: onOpen)
+        else
+          SliverAnimeList(items: items, onTap: onOpen),
+        const SliverToBoxAdapter(child: SizedBox(height: 28)),
       ],
     );
   }

@@ -21,6 +21,7 @@ import 'widgets/details_body.dart';
 import 'widgets/details_hero.dart';
 import 'widgets/playback_sheet.dart';
 import 'widgets/related_releases.dart';
+import 'related_screen.dart';
 
 class DetailsScreen extends StatefulWidget {
   const DetailsScreen({super.key, this.releaseId, this.shikimoriId});
@@ -124,33 +125,11 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
   Future<void> _playFromSources() async {
-    final library = context.read<LibraryStore>();
     final anime = _animeWithSources;
     if (anime == null) return;
-
-    // Get default source or first available
-    final defaultSource = anime.defaultSource;
-    if (defaultSource == null) return;
-
-    final selection = await showPlaybackSheet(
-      context,
-      animeWithSources: anime,
-      initialSource: defaultSource,
-      initialEpisode: library.lastEpisodeFor(defaultSource.release.id),
-      initialVoice: library.voiceFor(defaultSource.release.id),
-    );
-    if (!mounted || selection == null) return;
-    final routeId = selection.source.release.id > 0
-        ? selection.source.release.id
-        : selection.source.shikimoriAnime.id;
-    library.saveProgress(
-      releaseId: routeId,
-      episode: selection.episode.ordinal,
-      voice: selection.voice.id,
-    );
     context.push(
-      '/watch/$routeId/${selection.episode.ordinal}?voice=${selection.voice.id}',
-      extra: selection.source,
+      '/anime/shikimori/${anime.shikimoriAnime.id}/voices',
+      extra: anime,
     );
   }
 
@@ -256,11 +235,25 @@ class _DetailsScreenState extends State<DetailsScreen> {
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 1280),
                           child: Padding(
-                            padding: EdgeInsets.fromLTRB(padding, 40, padding, 0),
-                            child: RelatedReleases(
-                              items: _related,
-                              onOpen: _openRelated,
+                            padding: EdgeInsets.fromLTRB(padding, 24, padding, 0),
+                            child: _RelatedBlock(
                               compact: compact,
+                              child: RelatedReleases(
+                                items: _related,
+                                onOpen: _openRelated,
+                                onViewAll: _related.isNotEmpty && _release?.shikimoriId != null
+                                    ? () => context.push(
+                                          '/anime/shikimori/${_release!.shikimoriId}/related',
+                                          extra: RelatedArgs(
+                                            items: _related,
+                                            title: _release!.displayTitle,
+                                          ),
+                                        )
+                                    : () {},
+                                compact: compact,
+                                shikimoriId: _release?.shikimoriId,
+                                title: _release?.displayTitle,
+                              ),
                             ),
                           ),
                         ),
@@ -326,11 +319,25 @@ class _DetailsScreenState extends State<DetailsScreen> {
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 1280),
                         child: Padding(
-                          padding: EdgeInsets.fromLTRB(padding, 40, padding, 0),
-                          child: RelatedReleases(
-                            items: _related,
-                            onOpen: _openRelated,
+                          padding: EdgeInsets.fromLTRB(padding, 24, padding, 0),
+                          child: _RelatedBlock(
                             compact: compact,
+                            child: RelatedReleases(
+                              items: _related,
+                              onOpen: _openRelated,
+                              onViewAll: _related.isNotEmpty && _release?.shikimoriId != null
+                                  ? () => context.push(
+                                        '/anime/shikimori/${_release!.shikimoriId}/related',
+                                        extra: RelatedArgs(
+                                          items: _related,
+                                          title: _release!.displayTitle,
+                                        ),
+                                      )
+                                  : () {},
+                              compact: compact,
+                              shikimoriId: _release?.shikimoriId,
+                              title: _release?.displayTitle,
+                            ),
                           ),
                         ),
                       ),
@@ -408,6 +415,42 @@ class _DetailsScreenState extends State<DetailsScreen> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _RelatedBlock extends StatelessWidget {
+  const _RelatedBlock({required this.child, required this.compact});
+
+  final Widget child;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 16 : 24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.surfaceHigh.withValues(alpha: 0.5),
+            AppColors.surface.withValues(alpha: 0.62),
+            AppColors.backgroundLift.withValues(alpha: 0.72),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.borderStrong.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.20),
+            blurRadius: 26,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 }

@@ -25,13 +25,13 @@ class SourceNote extends StatelessWidget {
                 height: 5,
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppColors.accent,
+                  color: AppColors.planned,
                 ),
               ),
               const SizedBox(width: 7),
               const Flexible(
                 child: Text(
-                  'источник данных и видео — anilibria',
+                  'данные — shikimori, anilist и kitsu · видео — anilibria, animevost и anidub',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: AppFonts.body,

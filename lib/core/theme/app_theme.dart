@@ -9,12 +9,12 @@ abstract final class AppFonts {
 
 ThemeData buildAppTheme() {
   const scheme = ColorScheme.dark(
-    primary: AppColors.accent,
-    onPrimary: Colors.white,
-    primaryContainer: AppColors.accentDeep,
-    onPrimaryContainer: Colors.white,
-    secondary: AppColors.accentBright,
-    onSecondary: Colors.black,
+    primary: AppColors.text,
+    onPrimary: AppColors.background,
+    primaryContainer: AppColors.surfaceHigh,
+    onPrimaryContainer: AppColors.text,
+    secondary: AppColors.planned,
+    onSecondary: AppColors.background,
     surface: AppColors.surface,
     onSurface: AppColors.text,
     error: AppColors.danger,
@@ -29,7 +29,7 @@ ThemeData buildAppTheme() {
     fontFamily: AppFonts.body,
     scaffoldBackgroundColor: Colors.transparent,
     canvasColor: AppColors.surface,
-    splashFactory: InkSparkle.splashFactory,
+    splashFactory: InkRipple.splashFactory,
   );
 
   const display = TextStyle(
@@ -176,16 +176,16 @@ ThemeData buildAppTheme() {
       waitDuration: const Duration(milliseconds: 500),
     ),
     sliderTheme: SliderThemeData(
-      activeTrackColor: AppColors.accent,
+      activeTrackColor: AppColors.planned,
       inactiveTrackColor: Colors.white.withValues(alpha: 0.14),
-      thumbColor: AppColors.accentBright,
-      overlayColor: AppColors.accent.withValues(alpha: 0.16),
+      thumbColor: AppColors.planned,
+      overlayColor: AppColors.planned.withValues(alpha: 0.16),
       trackHeight: 3,
       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
     ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(
-      color: AppColors.accent,
+      color: AppColors.planned,
       linearTrackColor: AppColors.surfaceSoft,
       circularTrackColor: AppColors.surfaceSoft,
     ),
@@ -196,8 +196,8 @@ ThemeData buildAppTheme() {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: AppColors.accent,
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.surfaceHigh,
+        foregroundColor: AppColors.text,
         minimumSize: const Size(0, 48),
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
         textStyle: textTheme.labelLarge,
@@ -225,7 +225,7 @@ ThemeData buildAppTheme() {
     iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(
         foregroundColor: AppColors.textSoft,
-        highlightColor: AppColors.accent.withValues(alpha: 0.12),
+        highlightColor: AppColors.surfaceSoft,
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -243,7 +243,7 @@ ThemeData buildAppTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: AppColors.accent, width: 1.2),
+        borderSide: const BorderSide(color: AppColors.planned, width: 1.2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),

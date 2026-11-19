@@ -96,4 +96,21 @@ class ShikimoriApi {
       throw ApiException.fromDio(e);
     }
   }
+
+  /// Episode stills for an anime (used as "кадры из серий").
+  Future<List<String>> screenshots(int id) async {
+    try {
+      final response = await _dio.get('/animes/$id/screenshots');
+      final list = response.data as List<dynamic>;
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map((item) => ShikimoriConfig.imageUrl(item['original'] as String?))
+          .whereType<String>()
+          .toList();
+    } on DioException catch (e) {
+      // Screenshots are optional decoration: do not fail the details page.
+      if (e.response?.statusCode == 404) return const [];
+      throw ApiException.fromDio(e);
+    }
+  }
 }

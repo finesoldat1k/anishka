@@ -5,16 +5,23 @@ import 'trailer_view_stub.dart'
 
 /// Встроенный трейлер с youtube.
 ///
-/// На web рендерится как настоящий `<iframe>` поверх баннера, поэтому
-/// ролик запускается без звука и зацикливается. На нативных платформах
-/// возвращает пустой виджет: там трейлер открывается в браузере.
+/// На web рендерится как настоящий `<iframe>`. В режиме [ambient] ролик
+/// идёт без звука, без управления и зацикливается — это фоновый трейлер.
+/// В интерактивном режиме включаются звук и стандартные контролы.
+/// На нативных платформах возвращает пустой виджет: там трейлер
+/// открывается в браузере.
 class TrailerView extends StatelessWidget {
-  const TrailerView({super.key, required this.youtubeId});
+  const TrailerView({
+    super.key,
+    required this.youtubeId,
+    this.ambient = true,
+  });
 
   final String youtubeId;
+  final bool ambient;
 
   @override
   Widget build(BuildContext context) {
-    return impl.buildTrailerView(youtubeId);
+    return impl.buildTrailerView(youtubeId, ambient: ambient);
   }
 }

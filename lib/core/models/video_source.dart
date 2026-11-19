@@ -108,6 +108,9 @@ class SourceEpisode {
     this.posterUrl,
     this.hlsUrls = const {},      // quality -> HLS URL
     this.mp4Urls = const {},      // quality -> MP4 URL
+    this.voiceId,
+    this.voiceTitle,
+    this.voiceLogoUrl,
   });
 
   final String externalId;
@@ -117,6 +120,12 @@ class SourceEpisode {
   final String? posterUrl;
   final Map<String, String> hlsUrls;     // '1080' -> url
   final Map<String, String> mp4Urls;     // '1080' -> url
+
+  /// Some providers (Kodik) return one entry per translation. These fields
+  /// let the repository split a title into separate voiceover tracks.
+  final String? voiceId;
+  final String? voiceTitle;
+  final String? voiceLogoUrl;
 
   String? getStreamUrl(String quality) => hlsUrls[quality] ?? mp4Urls[quality];
   List<String> get availableQualities => [

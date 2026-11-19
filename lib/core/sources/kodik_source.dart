@@ -116,6 +116,9 @@ class KodikVideoSource implements VideoSource {
   SourceAnimeDetails _mapDetails(Map<String, dynamic> map) {
     final episodes = <SourceEpisode>[];
     final episodesData = map['episodes'] as List?;
+    final topTranslation = map['translation'];
+    final topTranslationMap =
+        topTranslation is Map ? topTranslation : null;
     if (episodesData != null) {
       for (final ep in episodesData) {
         final epMap = ep as Map<String, dynamic>;
@@ -130,11 +133,16 @@ class KodikVideoSource implements VideoSource {
             }
           }
         }
+        final translation = epMap['translation'] is Map
+            ? epMap['translation'] as Map
+            : topTranslationMap;
         episodes.add(SourceEpisode(
           externalId: epMap['id']?.toString() ?? '',
           ordinal: epMap['episode'] ?? 0,
           title: epMap['title'] as String?,
           hlsUrls: hlsUrls,
+          voiceId: translation?['id']?.toString(),
+          voiceTitle: translation?['name']?.toString(),
         ));
       }
     }

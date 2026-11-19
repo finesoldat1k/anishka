@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'core/repository/anime_repository.dart';
 import 'core/router/app_router.dart';
 import 'core/storage/library_store.dart';
+import 'core/theme/app_scroll_behavior.dart';
 import 'core/theme/app_theme.dart';
 import 'ui/widgets/app_background.dart';
 
@@ -40,6 +41,7 @@ class _AnishkaAppState extends State<AnishkaApp> {
         theme: buildAppTheme(),
         darkTheme: buildAppTheme(),
         themeMode: ThemeMode.dark,
+        scrollBehavior: const AppScrollBehavior(),
         routerConfig: _router,
         builder: (context, child) {
           return AppBackground(child: child ?? const SizedBox.shrink());

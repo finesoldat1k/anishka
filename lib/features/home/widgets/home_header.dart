@@ -2,172 +2,121 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../ui/widgets/brand_mark.dart';
 
+/// Compact home header: a search preview and an entry point to "о приложении".
+/// No brand mark here — it lives on the about page.
 class HomeHeader extends StatelessWidget {
   const HomeHeader({
     super.key,
-    required this.controller,
-    required this.focusNode,
-    required this.onChanged,
-    required this.onSubmitted,
-    required this.onClear,
-    this.loading = false,
+    required this.onSearchTap,
+    required this.onAboutTap,
+    this.compact = false,
   });
 
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final ValueChanged<String> onChanged;
-  final ValueChanged<String> onSubmitted;
-  final VoidCallback onClear;
-  final bool loading;
+  final VoidCallback onSearchTap;
+  final VoidCallback onAboutTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 760;
-        final search = _SearchField(
-          controller: controller,
-          focusNode: focusNode,
-          onChanged: onChanged,
-          onSubmitted: onSubmitted,
-          onClear: onClear,
-          loading: loading,
-        );
-
-        if (compact) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const BrandMark(),
-                  const Spacer(),
-                  const _SourceBadge(),
-                ],
-              ),
-              const SizedBox(height: 18),
-              search,
-            ],
-          );
-        }
-
-        return Row(
-          children: [
-            const BrandMark(),
-            const Spacer(),
-            SizedBox(width: 420, child: search),
-            const SizedBox(width: 14),
-            const _SourceBadge(),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SearchField extends StatelessWidget {
-  const _SearchField({
-    required this.controller,
-    required this.focusNode,
-    required this.onChanged,
-    required this.onSubmitted,
-    required this.onClear,
-    required this.loading,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final ValueChanged<String> onChanged;
-  final ValueChanged<String> onSubmitted;
-  final VoidCallback onClear;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: controller,
-      builder: (context, value, _) {
-        return TextField(
-          controller: controller,
-          focusNode: focusNode,
-          onChanged: onChanged,
-          onSubmitted: onSubmitted,
-          textInputAction: TextInputAction.search,
-          style: const TextStyle(
-            fontFamily: AppFonts.body,
-            fontSize: 14,
-            color: AppColors.text,
-          ),
-          cursorColor: AppColors.accentBright,
-          decoration: InputDecoration(
-            hintText: 'поиск по названию',
-            prefixIcon: const Icon(Icons.search_rounded, size: 20),
-            suffixIcon: loading
-                ? const Padding(
-                    padding: EdgeInsets.all(15),
-                    child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : (value.text.isNotEmpty
-                      ? IconButton(
-                          tooltip: 'очистить',
-                          onPressed: onClear,
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                        )
-                      : null),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SourceBadge extends StatelessWidget {
-  const _SourceBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.accent,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.accent.withValues(alpha: 0.8),
-                  blurRadius: 8,
+    return Row(
+      children: [
+        Expanded(
+          child: Tooltip(
+            message: 'открыть поиск',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onSearchTap,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface.withValues(alpha: 0.74),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        blurRadius: 22,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.search_rounded,
+                        size: 19,
+                        color: AppColors.textMuted,
+                      ),
+                      const SizedBox(width: 11),
+                      const Expanded(
+                        child: Text(
+                          'поиск аниме',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: AppFonts.body,
+                            fontSize: 13,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ),
+                      if (!compact)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.background.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: const Text(
+                            '/',
+                            style: TextStyle(
+                              fontFamily: AppFonts.body,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textFaint,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(width: 7),
-          const Text(
-            'anilibria',
-            style: TextStyle(
-              fontFamily: AppFonts.body,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textSoft,
+        ),
+        const SizedBox(width: 10),
+        Tooltip(
+          message: 'о приложении',
+          child: Material(
+            color: AppColors.surface.withValues(alpha: 0.74),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppColors.border),
+            ),
+            child: InkWell(
+              onTap: onAboutTap,
+              borderRadius: BorderRadius.circular(16),
+              child: const SizedBox(
+                width: 48,
+                height: 48,
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 20,
+                  color: AppColors.textSoft,
+                ),
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

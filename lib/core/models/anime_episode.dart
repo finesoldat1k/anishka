@@ -17,6 +17,8 @@ class AnimeEpisode {
     required this.endingStart,
     required this.endingStop,
     required this.sortOrder,
+    this.resolverSource,
+    this.resolverId,
   });
 
   final String id;
@@ -32,6 +34,10 @@ class AnimeEpisode {
   final int? endingStart;
   final int? endingStop;
   final int? sortOrder;
+
+  /// Lazy stream resolution for scraped sources (AnimeVost, AniDub, ...).
+  final String? resolverSource;
+  final String? resolverId;
 
   factory AnimeEpisode.fromJson(Map<String, dynamic> json) {
     final opening = asMap(json['opening']);
@@ -52,6 +58,8 @@ class AnimeEpisode {
       endingStart: asInt(ending['start']),
       endingStop: asInt(ending['stop']),
       sortOrder: asInt(json['sort_order']),
+      resolverSource: asString(json['resolver_source']),
+      resolverId: asString(json['resolver_id']),
     );
   }
 
@@ -59,7 +67,37 @@ class AnimeEpisode {
 
   String? get streamUrl => hls1080 ?? hls720 ?? hls480;
 
-  bool get hasStream => streamUrl != null;
+  bool get canResolve =>
+      resolverSource != null &&
+      resolverSource!.isNotEmpty &&
+      resolverId != null &&
+      resolverId!.isNotEmpty;
+
+  bool get hasStream => streamUrl != null || canResolve;
+
+  AnimeEpisode copyWith({
+    String? hls480,
+    String? hls720,
+    String? hls1080,
+  }) {
+    return AnimeEpisode(
+      id: id,
+      ordinal: ordinal,
+      name: name,
+      hls480: hls480 ?? this.hls480,
+      hls720: hls720 ?? this.hls720,
+      hls1080: hls1080 ?? this.hls1080,
+      durationSeconds: durationSeconds,
+      previewPath: previewPath,
+      openingStart: openingStart,
+      openingStop: openingStop,
+      endingStart: endingStart,
+      endingStop: endingStop,
+      sortOrder: sortOrder,
+      resolverSource: resolverSource,
+      resolverId: resolverId,
+    );
+  }
 
   String get displayName =>
       name == null || name!.trim().isEmpty ? 'серия $ordinal' : lc(name);
@@ -98,5 +136,7 @@ class AnimeEpisode {
     'opening': {'start': openingStart, 'stop': openingStop},
     'ending': {'start': endingStart, 'stop': endingStop},
     'sort_order': sortOrder,
+    'resolver_source': resolverSource,
+    'resolver_id': resolverId,
   };
 }
