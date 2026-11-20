@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../../core/models/anime_episode.dart';
 import '../../../core/models/anime_release.dart';
@@ -299,7 +300,7 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
                           child: const SizedBox(
                             width: 34,
                             height: 34,
-                            child: Icon(Icons.close_rounded, size: 18),
+                            child: Icon(AppIcons.x, size: 18),
                           ),
                         ),
                       ),
@@ -361,7 +362,7 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
                     const SizedBox(height: 14),
                   ],
                   const _SheetLabel(
-                    icon: Icons.graphic_eq_rounded,
+                    icon: AppIcons.waveform,
                     label: 'озвучка',
                   ),
                   const SizedBox(height: 10),
@@ -385,7 +386,7 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
                   Row(
                     children: [
                       const _SheetLabel(
-                        icon: Icons.video_collection_outlined,
+                        icon: AppIcons.filmStrip,
                         label: 'серия',
                       ),
                       const Spacer(),
@@ -428,7 +429,7 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
                     label: episode == null
                         ? 'серии ещё не вышли'
                         : 'смотреть серию ${episode.ordinal}',
-                    icon: Icons.play_arrow_rounded,
+                    icon: AppIcons.play,
                     expand: true,
                     height: 50,
                     onTap: episode != null && episode.hasStream ? _start : null,
@@ -527,7 +528,7 @@ class _VoiceChip extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.graphic_eq_rounded,
+                  AppIcons.waveform,
                   size: 15,
                   color: selected
                       ? AppColors.accentBright
@@ -546,7 +547,7 @@ class _VoiceChip extends StatelessWidget {
                 if (selected) ...[
                   const SizedBox(width: 8),
                   const Icon(
-                    Icons.check_rounded,
+                    AppIcons.check,
                     size: 14,
                     color: AppColors.accentBright,
                   ),
@@ -580,7 +581,7 @@ class _SourceSummary extends StatelessWidget {
       child: Row(
         children: [
           const Icon(
-            Icons.source_rounded,
+            AppIcons.plugs,
             size: 15,
             color: AppColors.accentBright,
           ),
@@ -713,7 +714,7 @@ class _EpisodePreview extends StatelessWidget {
                 color: AppColors.surface,
                 child: Center(
                   child: Icon(
-                    Icons.movie_filter_outlined,
+                    AppIcons.filmSlate,
                     color: AppColors.textFaint,
                     size: 34,
                   ),
@@ -745,7 +746,7 @@ class _EpisodePreview extends StatelessWidget {
                       ),
                     ),
                     child: const Icon(
-                      Icons.play_arrow_rounded,
+                      AppIcons.play,
                       size: 19,
                       color: Colors.white,
                     ),

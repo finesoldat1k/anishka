@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <application
-        android:label="anishka"
+        android:label="анишка"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

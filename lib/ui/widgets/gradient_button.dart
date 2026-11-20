@@ -48,11 +48,49 @@ class GradientButton extends StatefulWidget {
   State<GradientButton> createState() => _GradientButtonState();
 }
 
-class _GradientButtonState extends State<GradientButton> {
+class _GradientButtonState extends State<GradientButton> with SingleTickerProviderStateMixin {
   bool _hovered = false;
+  bool _pressed = false;
+  late final AnimationController _pressController;
+  late final Animation<double> _pressAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pressController = AnimationController(
+      duration: const Duration(milliseconds: 100),
+      vsync: this,
+    );
+    _pressAnimation = Tween<double>(begin: 1.0, end: 0.97).animate(
+      CurvedAnimation(parent: _pressController, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pressController.dispose();
+    super.dispose();
+  }
+
+  void _handleTapDown(TapDownDetails _) {
+    if (widget.onTap != null) {
+      _pressController.forward();
+      setState(() => _pressed = true);
+    }
+  }
+
+  void _handleTapUp(TapUpDetails _) {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
+
+  void _handleTapCancel() {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
 
   Color get _toneColor => switch (widget.tone) {
-    GradientButtonTone.play => AppColors.watching,
+    GradientButtonTone.play => AppColors.planned, // Purple for play button
     GradientButtonTone.favorite => AppColors.favorite,
     GradientButtonTone.planned => AppColors.planned,
     GradientButtonTone.watching => AppColors.watching,
@@ -106,16 +144,16 @@ class _GradientButtonState extends State<GradientButton> {
       color: primary
           ? (useTone ? const Color(0xFFE4E4E7) : AppColors.text)
           : widget.active
-          ? tone.withValues(alpha: 0.14)
+          ? tone // Fully opaque when active
           : _hovered
-          ? AppColors.surfaceSoft
+          ? tone.withValues(alpha: 0.15)
           : AppColors.surfaceHigh,
       borderRadius: BorderRadius.circular(14),
       border: Border.all(
         color: widget.active
-            ? tone.withValues(alpha: 0.48)
+            ? tone.withValues(alpha: 0.8)
             : _hovered
-            ? tone.withValues(alpha: 0.30)
+            ? tone.withValues(alpha: 0.5)
             : AppColors.borderStrong,
       ),
       boxShadow: primary && _hovered
@@ -132,7 +170,13 @@ class _GradientButtonState extends State<GradientButton> {
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onExit: (_) {
+        setState(() => _hovered = false);
+        if (_pressed) {
+          _pressController.reverse();
+          setState(() => _pressed = false);
+        }
+      },
       child: AnimatedScale(
         scale: _hovered && enabled ? 1.012 : 1,
         duration: const Duration(milliseconds: 160),
@@ -140,21 +184,27 @@ class _GradientButtonState extends State<GradientButton> {
         child: AnimatedOpacity(
           opacity: enabled ? 1 : 0.45,
           duration: const Duration(milliseconds: 160),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: widget.onTap,
-              borderRadius: BorderRadius.circular(14),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                height: widget.height,
-                width: widget.expand ? double.infinity : null,
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.expand ? 20 : 22,
+          child: ScaleTransition(
+            scale: _pressAnimation,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap,
+                onTapDown: _handleTapDown,
+                onTapUp: _handleTapUp,
+                onTapCancel: _handleTapCancel,
+                borderRadius: BorderRadius.circular(14),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  height: widget.height,
+                  width: widget.expand ? double.infinity : null,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: widget.expand ? 20 : 22,
+                  ),
+                  decoration: decoration,
+                  child: content,
                 ),
-                decoration: decoration,
-                child: content,
               ),
             ),
           ),

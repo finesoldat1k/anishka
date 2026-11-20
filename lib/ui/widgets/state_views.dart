@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -85,7 +86,7 @@ class EmptyState extends StatelessWidget {
                 const SizedBox(height: 22),
                 GradientButton(
                   label: actionLabel!,
-                  icon: Icons.arrow_forward_rounded,
+                  icon: AppIcons.arrowRight,
                   onTap: onAction,
                   ghost: true,
                   height: 42,
@@ -114,7 +115,7 @@ class ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return EmptyState(
-      icon: Icons.cloud_off_rounded,
+      icon: AppIcons.cloudSlash,
       title: 'не удалось загрузить',
       message: message,
       actionLabel: onRetry == null ? null : 'попробовать снова',

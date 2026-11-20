@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../core/theme/app_colors.dart';
 
@@ -155,7 +156,7 @@ class _ImageFallback extends StatelessWidget {
       child: Center(
         child: initial == null
             ? const Icon(
-                Icons.movie_filter_outlined,
+                AppIcons.filmSlate,
                 color: AppColors.textFaint,
                 size: 28,
               )

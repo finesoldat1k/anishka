@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/repository/anime_repository.dart';
@@ -94,7 +95,7 @@ class _OngoingViewState extends State<OngoingView> {
     if (_items.isEmpty) {
       return Center(
         child: EmptyState(
-          icon: Icons.play_circle_outline_rounded,
+          icon: AppIcons.playCircle,
           title: 'в эфире пока тихо',
           message: 'онгоинги появятся здесь, как только их добавят в каталог.',
           actionLabel: 'обновить',
@@ -168,7 +169,7 @@ class _RefreshButton extends StatelessWidget {
                     padding: EdgeInsets.all(11),
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.refresh_rounded, size: 18),
+                : const Icon(AppIcons.arrowClockwise, size: 18),
           ),
         ),
       ),

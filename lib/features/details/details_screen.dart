@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/anime_franchise.dart';
@@ -24,10 +25,18 @@ import 'widgets/related_releases.dart';
 import 'related_screen.dart';
 
 class DetailsScreen extends StatefulWidget {
-  const DetailsScreen({super.key, this.releaseId, this.shikimoriId});
+  const DetailsScreen({
+    super.key,
+    this.releaseId,
+    this.shikimoriId,
+    this.preview,
+  });
 
   final int? releaseId;
   final int? shikimoriId;
+
+  /// Compact search/home result used for instant first paint.
+  final ShikimoriAnime? preview;
 
   @override
   State<DetailsScreen> createState() => _DetailsScreenState();
@@ -39,6 +48,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
   AnimeRelease? _release; // For legacy AniLibria-only flow
   List<dynamic> _related = const [];
   bool _loading = true;
+  bool _fullDataLoaded = false; // Track when full data (stills, related) is ready
   bool _refreshing = false;
   String? _error;
 
@@ -46,13 +56,31 @@ class _DetailsScreenState extends State<DetailsScreen> {
   void initState() {
     super.initState();
     _repository = context.read<AnimeRepository>();
+    final preview = widget.preview;
+    final shikimoriId = widget.shikimoriId;
+    if (shikimoriId != null) {
+      final cached = _repository.cachedAnimeWithSources(shikimoriId);
+      if (cached != null) {
+        _animeWithSources = cached;
+        _release = cached.defaultSource?.release;
+        _related = cached.related;
+        _loading = false;
+      } else if (preview != null) {
+        _animeWithSources = AnimeWithSources(
+          shikimoriAnime: preview.toDetailsPreview(),
+          sources: const [],
+          related: const [],
+        );
+        _loading = false;
+      }
+    }
     _load();
   }
 
   Future<void> _load({bool refresh = false}) async {
     if (refresh) {
       setState(() => _refreshing = true);
-    } else {
+    } else if (_animeWithSources == null && _release == null) {
       setState(() {
         _loading = true;
         _error = null;
@@ -60,24 +88,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
 
     try {
-      if (widget.shikimoriId != null) {
-        // Shikimori-based flow: get anime with all sources
-        final animeWithSources = await _repository.getAnimeWithSources(
-          widget.shikimoriId!,
-          refresh: refresh,
-        );
-        if (!mounted) return;
-        // Sync library for the primary source if available
-        final defaultSource = animeWithSources.defaultSource;
-        if (defaultSource != null) {
-          context.read<LibraryStore>().syncSnapshot(defaultSource.release);
-        }
-        setState(() {
-          _animeWithSources = animeWithSources;
-          _release = defaultSource?.release;
-          _related = animeWithSources.related;
-          _error = null;
-        });
+      final shikimoriId = widget.shikimoriId;
+      if (shikimoriId != null) {
+        await _loadShikimori(shikimoriId, refresh: refresh);
       } else if (widget.releaseId != null) {
         // Legacy AniLibria-only flow
         final releaseFuture = _repository.release(
@@ -114,6 +127,83 @@ class _DetailsScreenState extends State<DetailsScreen> {
         });
       }
     }
+  }
+
+  /// Three-stage load: preview -> base Shikimori -> enriched metadata ->
+  /// full source list. Every stage paints as soon as it is ready.
+  Future<void> _loadShikimori(int id, {required bool refresh}) async {
+    if (!refresh) {
+      final cached = _repository.cachedAnimeWithSources(id);
+      if (cached != null) {
+        _applyFull(cached);
+        return;
+      }
+    }
+
+    final detailsFuture = _repository.getAnimeDetails(id, refresh: refresh);
+    final sourcesFuture = _repository.getAnimeWithSources(id, refresh: refresh);
+
+    // Base response removes the skeleton even on a cold deep link.
+    try {
+      final base = await _repository.getShikimoriDetails(id);
+      if (!mounted) return;
+      _applyDetails(base);
+    } catch (_) {
+      // The futures below carry the user-visible error.
+    }
+
+    try {
+      final details = await detailsFuture;
+      if (!mounted) return;
+      _applyDetails(details);
+    } catch (_) {
+      // Sources may still be usable; the full load reports hard failures.
+    }
+
+    final anime = await sourcesFuture;
+    if (!mounted) return;
+    _applyFull(anime);
+  }
+
+  void _applyDetails(ShikimoriAnimeDetails details) {
+    final current = _animeWithSources;
+    setState(() {
+      _animeWithSources = AnimeWithSources(
+        shikimoriAnime: details,
+        sources: current?.sources ?? const [],
+        related: current?.related ?? const [],
+      );
+      _loading = false;
+      _fullDataLoaded = false; // Full data not ready yet
+      _error = null;
+    });
+  }
+
+  void _applyFull(AnimeWithSources anime) {
+    final defaultSource = anime.defaultSource;
+    final library = context.read<LibraryStore>();
+    if (defaultSource != null) {
+      // Move favourite/status from the temporary Shikimori snapshot to the
+      // real playable release.
+      library.adoptEntry(-anime.shikimoriAnime.id, defaultSource.release);
+      library.syncSnapshot(defaultSource.release);
+    }
+    setState(() {
+      _animeWithSources = anime;
+      _release = defaultSource?.release;
+      _related = anime.related;
+      _fullDataLoaded = true; // Full data now ready
+      _error = null;
+    });
+  }
+
+  /// Temporary library item so favourite/status buttons work before sources
+  /// have finished loading.
+  AnimeRelease? get _librarySnapshot {
+    final anime = _animeWithSources;
+    if (anime == null) return null;
+    return anime.defaultSource?.release ??
+        AnimeRelease.fromShikimoriDetails(anime.shikimoriAnime);
   }
 
   void _back() {
@@ -160,7 +250,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
     if (anime is AnimeRelease) {
       context.push('/anime/${anime.id}');
     } else if (anime is ShikimoriAnime) {
-      context.push('/anime/shikimori/${anime.id}');
+      context.push('/anime/shikimori/${anime.id}', extra: anime);
     }
   }
 
@@ -176,7 +266,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
         children: [
           if (_loading && _animeWithSources == null && _release == null)
             const _DetailsSkeleton()
-          else if (_error != null && _animeWithSources == null && _release == null)
+          else if (_error != null &&
+              _animeWithSources == null &&
+              _release == null)
             Center(
               child: ErrorState(message: _error!, onRetry: () => _load()),
             )
@@ -193,24 +285,28 @@ class _DetailsScreenState extends State<DetailsScreen> {
                   SliverToBoxAdapter(
                     child: DetailsHero.sources(
                       animeWithSources: _animeWithSources!,
+                      librarySnapshot: _librarySnapshot,
                       compact: compact,
                       onPlay: _playFromSources,
                       onToggleFavorite: () {
-                        final source = _animeWithSources!.defaultSource;
-                        if (source != null) {
-                          context.read<LibraryStore>().toggleFavorite(source.release);
+                        final release = _librarySnapshot;
+                        if (release != null) {
+                          context.read<LibraryStore>().toggleFavorite(release);
                         }
                       },
                       onSelectStatus: (status) {
-                        final source = _animeWithSources!.defaultSource;
-                        if (source != null) {
-                          context.read<LibraryStore>().setStatus(source.release, status);
+                        final release = _librarySnapshot;
+                        if (release != null) {
+                          context.read<LibraryStore>().setStatus(
+                            release,
+                            status,
+                          );
                         }
                       },
                       onRemoveStatus: () {
-                        final source = _animeWithSources!.defaultSource;
-                        if (source != null) {
-                          context.read<LibraryStore>().setStatus(source.release, null);
+                        final release = _librarySnapshot;
+                        if (release != null) {
+                          context.read<LibraryStore>().setStatus(release, null);
                         }
                       },
                     ),
@@ -224,36 +320,39 @@ class _DetailsScreenState extends State<DetailsScreen> {
                           child: DetailsBody.sources(
                             animeWithSources: _animeWithSources!,
                             compact: compact,
+                            loadingStills: !_fullDataLoaded,
+                            loadingRelated: !_fullDataLoaded,
                           ),
                         ),
                       ),
                     ),
                   ),
-                  if (_related.isNotEmpty)
+                  if (_related.isNotEmpty || !_fullDataLoaded)
                     SliverToBoxAdapter(
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 1280),
                           child: Padding(
-                            padding: EdgeInsets.fromLTRB(padding, 24, padding, 0),
-                            child: _RelatedBlock(
-                              compact: compact,
-                              child: RelatedReleases(
-                                items: _related,
-                                onOpen: _openRelated,
-                                onViewAll: _related.isNotEmpty && _release?.shikimoriId != null
-                                    ? () => context.push(
-                                          '/anime/shikimori/${_release!.shikimoriId}/related',
-                                          extra: RelatedArgs(
-                                            items: _related,
-                                            title: _release!.displayTitle,
-                                          ),
-                                        )
-                                    : () {},
-                                compact: compact,
-                                shikimoriId: _release?.shikimoriId,
-                                title: _release?.displayTitle,
+                            padding: EdgeInsets.fromLTRB(
+                              padding,
+                              24,
+                              padding,
+                              0,
+                            ),
+                            child: RelatedReleases(
+                              items: _related,
+                              onOpen: _openRelated,
+                              onViewAll: () => context.push(
+                                '/anime/shikimori/${_animeWithSources!.shikimoriAnime.id}/related',
+                                extra: RelatedArgs(
+                                  items: _related,
+                                  title: _animeWithSources!.displayTitle,
+                                ),
                               ),
+                              compact: compact,
+                              shikimoriId: _animeWithSources!.shikimoriAnime.id,
+                              title: _animeWithSources!.displayTitle,
+                              loading: !_fullDataLoaded,
                             ),
                           ),
                         ),
@@ -320,24 +419,28 @@ class _DetailsScreenState extends State<DetailsScreen> {
                         constraints: const BoxConstraints(maxWidth: 1280),
                         child: Padding(
                           padding: EdgeInsets.fromLTRB(padding, 24, padding, 0),
-                          child: _RelatedBlock(
+                          child: RelatedReleases(
+                            items: _related,
+                            onOpen: _openRelated,
+                            onViewAll: () {
+                              final id =
+                                  _release?.shikimoriId ??
+                                  (_related.isNotEmpty &&
+                                          _related.first is ShikimoriAnime
+                                      ? (_related.first as ShikimoriAnime).id
+                                      : 0);
+                              if (id <= 0) return;
+                              context.push(
+                                '/anime/shikimori/$id/related',
+                                extra: RelatedArgs(
+                                  items: _related,
+                                  title: _release?.displayTitle,
+                                ),
+                              );
+                            },
                             compact: compact,
-                            child: RelatedReleases(
-                              items: _related,
-                              onOpen: _openRelated,
-                              onViewAll: _related.isNotEmpty && _release?.shikimoriId != null
-                                  ? () => context.push(
-                                        '/anime/shikimori/${_release!.shikimoriId}/related',
-                                        extra: RelatedArgs(
-                                          items: _related,
-                                          title: _release!.displayTitle,
-                                        ),
-                                      )
-                                  : () {},
-                              compact: compact,
-                              shikimoriId: _release?.shikimoriId,
-                              title: _release?.displayTitle,
-                            ),
+                            shikimoriId: _release?.shikimoriId,
+                            title: _release?.displayTitle,
                           ),
                         ),
                       ),
@@ -419,42 +522,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 }
 
-class _RelatedBlock extends StatelessWidget {
-  const _RelatedBlock({required this.child, required this.compact});
-
-  final Widget child;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(compact ? 16 : 24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.surfaceHigh.withValues(alpha: 0.5),
-            AppColors.surface.withValues(alpha: 0.62),
-            AppColors.backgroundLift.withValues(alpha: 0.72),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.borderStrong.withValues(alpha: 0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.20),
-            blurRadius: 26,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
 class _BackButton extends StatelessWidget {
   const _BackButton({required this.onTap});
 
@@ -478,7 +545,7 @@ class _BackButton extends StatelessWidget {
               child: const SizedBox(
                 width: 42,
                 height: 42,
-                child: Icon(Icons.arrow_back_rounded, size: 20),
+                child: Icon(AppIcons.arrowLeft, size: 20),
               ),
             ),
           ),

@@ -64,7 +64,7 @@ class LibraryEntry {
     final anime = AnimeRelease.fromSnapshot(
       animeJson.map((key, value) => MapEntry(key.toString(), value)),
     );
-    if (anime.id <= 0) return null;
+    if (anime.id == 0) return null;
     return LibraryEntry(
       anime: anime,
       status: CollectionStatus.fromStorage(json['status']),
@@ -252,6 +252,26 @@ class LibraryStore extends ChangeNotifier {
       _entries[anime.id] = current.copyWith(
         anime: anime,
         favorite: true,
+        updatedAt: DateTime.now(),
+      );
+    }
+    _persistLibrary();
+    notifyListeners();
+  }
+
+  /// Migrate a temporary Shikimori-only entry (negative id) to the real
+  /// playable release once sources have loaded.
+  void adoptEntry(int temporaryId, AnimeRelease release) {
+    final temporary = _entries.remove(temporaryId);
+    if (temporary == null) return;
+    final current = _entries[release.id];
+    final favorite = temporary.favorite || (current?.favorite ?? false);
+    final status = current?.status ?? temporary.status;
+    if (status != null || favorite) {
+      _entries[release.id] = LibraryEntry(
+        anime: release,
+        status: status,
+        favorite: favorite,
         updatedAt: DateTime.now(),
       );
     }

@@ -1,5 +1,5 @@
 name: anishka
-description: "anishka — аниме без лишнего. кроссплатформенный клиент anilibria."
+description: "anishka — аниме без лишнего. кроссплатформенный клиент."
 publish_to: "none"
 version: 1.0.0+1
 
@@ -48,6 +48,9 @@ flutter:
           weight: 700
         - asset: assets/fonts/Unbounded-800.ttf
           weight: 800
+    - family: Phosphor
+      fonts:
+        - asset: assets/fonts/Phosphor.ttf
     - family: Onest
       fonts:
         - asset: assets/fonts/Onest-400.ttf

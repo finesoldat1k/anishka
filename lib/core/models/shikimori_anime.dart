@@ -42,7 +42,9 @@ class ShikimoriAnime {
       status: (json['status'] as String? ?? '').lc,
       episodes: json['episodes'] as int? ?? 0,
       episodesAired: json['episodes_aired'] as int? ?? 0,
-      image: ShikimoriImage.fromJson(json['image'] as Map<String, dynamic>? ?? {}),
+      image: ShikimoriImage.fromJson(
+        json['image'] as Map<String, dynamic>? ?? {},
+      ),
       url: (json['url'] as String? ?? '').lc,
       airedOn: json['aired_on'] as String?,
       releasedOn: json['released_on'] as String?,
@@ -53,7 +55,8 @@ class ShikimoriAnime {
   String get displayTitle => russian.isNotEmpty ? russian : name;
 
   /// Poster URL for lists (preview size, with graceful fallbacks).
-  String? get posterUrl => _bestImage([image.preview, image.x96, image.original, image.x48]);
+  String? get posterUrl =>
+      _bestImage([image.preview, image.x96, image.original, image.x48]);
 
   /// Poster URL for details (original size, with graceful fallbacks).
   String? get posterOriginalUrl =>
@@ -100,16 +103,30 @@ class ShikimoriAnime {
     'music' => 'клип',
     _ => kind,
   };
+
+  /// Lightweight details object used for instant first paint on the details
+  /// page while the full Shikimori response is in flight.
+  ShikimoriAnimeDetails toDetailsPreview() {
+    return ShikimoriAnimeDetails(
+      id: id,
+      name: name,
+      russian: russian,
+      kind: kind,
+      score: score,
+      status: status,
+      episodes: episodes,
+      episodesAired: episodesAired,
+      image: image,
+      url: url,
+      airedOn: airedOn,
+      releasedOn: releasedOn,
+    );
+  }
 }
 
 /// Image sizes from Shikimori.
 class ShikimoriImage {
-  const ShikimoriImage({
-    this.original,
-    this.preview,
-    this.x96,
-    this.x48,
-  });
+  const ShikimoriImage({this.original, this.preview, this.x96, this.x48});
 
   final String? original;
   final String? preview;
@@ -236,7 +253,9 @@ class ShikimoriAnimeDetails {
       status: (json['status'] as String? ?? '').lc,
       episodes: json['episodes'] as int? ?? 0,
       episodesAired: json['episodes_aired'] as int? ?? 0,
-      image: ShikimoriImage.fromJson(json['image'] as Map<String, dynamic>? ?? {}),
+      image: ShikimoriImage.fromJson(
+        json['image'] as Map<String, dynamic>? ?? {},
+      ),
       url: (json['url'] as String? ?? '').lc,
       airedOn: json['aired_on'] as String?,
       releasedOn: json['released_on'] as String?,
@@ -257,10 +276,13 @@ class ShikimoriAnimeDetails {
           ?.map((v) => ShikimoriVideo.fromJson(v as Map<String, dynamic>))
           .toList(),
       franchise: json['franchise'] as String?,
-      screenshots: (json['screenshots'] as List?)
-              ?.map((e) => e is Map<String, dynamic>
-                  ? ShikimoriConfig.imageUrl(e['original'] as String?)
-                  : null)
+      screenshots:
+          (json['screenshots'] as List?)
+              ?.map(
+                (e) => e is Map<String, dynamic>
+                    ? ShikimoriConfig.imageUrl(e['original'] as String?)
+                    : null,
+              )
               .whereType<String>()
               .toList() ??
           const [],
@@ -328,7 +350,8 @@ class ShikimoriAnimeDetails {
 
   /// All genre labels (Russian from Shikimori, otherwise AniList/Kitsu).
   List<String> get allGenres {
-    final shikimoriGenres = genres
+    final shikimoriGenres =
+        genres
             ?.map((g) => g.russian.isNotEmpty ? g.russian : g.name)
             .where((value) => value.isNotEmpty)
             .toList() ??
@@ -350,9 +373,23 @@ class ShikimoriAnimeDetails {
 
   int? get durationMinutes => duration ?? metadataDuration;
 
-  /// Parsed YouTube id from [trailerUrl].
+  /// Parsed YouTube id from [trailerUrl], falling back to Shikimori videos.
+  ///
+  /// The base Shikimori response already contains `videos`, so the ambient
+  /// trailer can start before the AniList/Kitsu enrichment finishes.
   String? get trailerYoutubeId {
-    final value = trailerUrl?.trim();
+    final direct = _youtubeIdFromUrl(trailerUrl);
+    if (direct != null) return direct;
+    for (final video in videos ?? const <ShikimoriVideo>[]) {
+      if (video.kind != 'pv' && video.kind != 'op') continue;
+      final id = _youtubeIdFromUrl(video.url);
+      if (id != null) return id;
+    }
+    return null;
+  }
+
+  String? _youtubeIdFromUrl(String? raw) {
+    final value = raw?.trim();
     if (value == null || value.isEmpty) return null;
     final uri = Uri.tryParse(value);
     if (uri == null) return null;
@@ -397,7 +434,8 @@ class ShikimoriAnimeDetails {
 
   String get genresLabel => genres?.map((g) => g.russian).join(', ') ?? '';
 
-  int get episodeCount => episodes > 0 ? episodes : (episodesAired > 0 ? episodesAired : 0);
+  int get episodeCount =>
+      episodes > 0 ? episodes : (episodesAired > 0 ? episodesAired : 0);
 
   bool get isOngoing => status == 'ongoing';
 
@@ -507,8 +545,10 @@ class ShikimoriAnimeDetails {
       genres: genres ?? this.genres,
       studios: studios ?? this.studios,
       videos: videos ?? this.videos,
-      anilibriaPosterFallback: anilibriaPosterFallback ?? this.anilibriaPosterFallback,
-      anilibriaBackgroundFallback: anilibriaBackgroundFallback ?? this.anilibriaBackgroundFallback,
+      anilibriaPosterFallback:
+          anilibriaPosterFallback ?? this.anilibriaPosterFallback,
+      anilibriaBackgroundFallback:
+          anilibriaBackgroundFallback ?? this.anilibriaBackgroundFallback,
       franchise: franchise ?? this.franchise,
       trailerUrl: trailerUrl ?? this.trailerUrl,
       trailerThumbnail: trailerThumbnail ?? this.trailerThumbnail,
@@ -529,7 +569,12 @@ class ShikimoriAnimeDetails {
 }
 
 class ShikimoriGenre {
-  const ShikimoriGenre({required this.id, required this.name, required this.russian, this.kind});
+  const ShikimoriGenre({
+    required this.id,
+    required this.name,
+    required this.russian,
+    this.kind,
+  });
   final int id;
   final String name;
   final String russian;
@@ -546,7 +591,11 @@ class ShikimoriGenre {
 }
 
 class ShikimoriStudio {
-  const ShikimoriStudio({required this.id, required this.name, this.filteredName});
+  const ShikimoriStudio({
+    required this.id,
+    required this.name,
+    this.filteredName,
+  });
   final int id;
   final String name;
   final String? filteredName;
@@ -584,6 +633,7 @@ class ShikimoriVideo {
     );
   }
 }
+
 /// Deduplicates labels while ignoring case, preserving the first spelling.
 List<String> _uniqueCaseInsensitive(Iterable<String> values) {
   final seen = <String>{};

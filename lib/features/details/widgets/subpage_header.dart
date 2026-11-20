@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
@@ -115,7 +116,7 @@ class _BackCircle extends StatelessWidget {
           width: size,
           height: size,
           child: const Icon(
-            Icons.arrow_back_rounded,
+            AppIcons.arrowLeft,
             size: 19,
             color: AppColors.textSoft,
           ),

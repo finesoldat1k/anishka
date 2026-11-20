@@ -3,12 +3,15 @@ import 'dart:math' as math;
 
 import '../api/anilibria_api.dart';
 import '../api/anilist_api.dart';
+import '../api/jikan_api.dart';
 import '../api/kitsu_api.dart';
 import '../api/shikimori_api.dart';
+import '../api/yani_api.dart';
 import '../models/anime_episode.dart';
 import '../models/anime_franchise.dart';
 import '../models/anime_release.dart';
 import '../models/anime_source.dart';
+import '../models/jikan_models.dart';
 import '../models/shikimori_anime.dart';
 import '../models/video_source.dart';
 import '../models/voiceover.dart';
@@ -22,11 +25,15 @@ class AnimeRepository {
     ShikimoriApi? shikimoriApi,
     AniListApi? anilistApi,
     KitsuApi? kitsuApi,
+    JikanApi? jikanApi,
     VideoSourceManager? sourceManager,
+    YaniApi? yaniApi,
   }) : _anilibriaApi = anilibriaApi ?? AniLibriaApi(),
        _shikimoriApi = shikimoriApi ?? ShikimoriApi(),
        _anilistApi = anilistApi ?? AniListApi(),
        _kitsuApi = kitsuApi ?? KitsuApi(),
+       _jikanApi = jikanApi ?? JikanApi(),
+       _yaniApi = yaniApi ?? YaniApi(),
        _sourceManager = sourceManager ?? _defaultSourceManager();
 
   static VideoSourceManager _defaultSourceManager() {
@@ -41,6 +48,8 @@ class AnimeRepository {
   final ShikimoriApi _shikimoriApi;
   final AniListApi _anilistApi;
   final KitsuApi _kitsuApi;
+  final JikanApi _jikanApi;
+  final YaniApi _yaniApi;
   final VideoSourceManager _sourceManager;
 
   // Shikimori cache
@@ -66,6 +75,14 @@ class AnimeRepository {
   final Map<int, List<AnimeFranchise>> _franchises = {};
   final Map<int, DateTime> _franchisesAt = {};
   final Map<int, Future<AnimeRelease>> _releaseRequests = {};
+
+  // Enriched Shikimori details (metadata, trailer, stills) without sources.
+  // The details page renders the base Shikimori response first and swaps in
+  // this enriched copy as soon as it is ready.
+  static const _animeMetadataTtl = Duration(minutes: 15);
+  final Map<int, _AnimeMetadata> _animeMetadataCache = {};
+  final Map<int, DateTime> _animeMetadataCacheAt = {};
+  final Map<int, Future<_AnimeMetadata>> _animeMetadataRequests = {};
 
   // Unified cache
   final Map<int, AnimeWithSources> _animeWithSourcesCache = {};
@@ -150,7 +167,7 @@ class AnimeRepository {
       return _shikimoriDetailsCache[id]!;
     }
     final pending = _shikimoriDetailsRequests[id];
-    if (pending != null && !refresh) return pending;
+    if (pending != null) return pending;
 
     final request = _shikimoriApi
         .getDetails(id)
@@ -197,10 +214,99 @@ class AnimeRepository {
 
   // ===== Unified: Shikimori + Sources =====
 
+  /// Enriched Shikimori details without building playback sources.
+  ///
+  /// This is the fast layer used by the details page: the hero, synopsis,
+  /// genres, studios and stills can be shown without waiting for AniLibria or
+  /// the scrapers. [getAnimeWithSources] reuses the same cached metadata.
+  Future<ShikimoriAnimeDetails> getAnimeDetails(
+    int shikimoriId, {
+    bool refresh = false,
+  }) async {
+    if (!refresh && _isMetadataFresh(shikimoriId)) {
+      return _animeMetadataCache[shikimoriId]!.details;
+    }
+    final base = await getShikimoriDetails(shikimoriId, refresh: refresh);
+    final metadata = await _loadMetadata(shikimoriId, base, refresh: refresh);
+    return metadata.details;
+  }
+
+  /// Last fully loaded result, if it is still fresh.
+  AnimeWithSources? cachedAnimeWithSources(int shikimoriId) {
+    final cachedAt = _animeWithSourcesCacheAt[shikimoriId];
+    final cached = _animeWithSourcesCache[shikimoriId];
+    if (cached == null || cachedAt == null) return null;
+    if (DateTime.now().difference(cachedAt) >= _animeWithSourcesTtl) {
+      return null;
+    }
+    return cached;
+  }
+
+  bool _isMetadataFresh(int shikimoriId) {
+    final cachedAt = _animeMetadataCacheAt[shikimoriId];
+    return _animeMetadataCache[shikimoriId] != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _animeMetadataTtl;
+  }
+
+  Future<_AnimeMetadata> _loadMetadata(
+    int shikimoriId,
+    ShikimoriAnimeDetails base, {
+    bool refresh = false,
+  }) {
+    if (!refresh && _isMetadataFresh(shikimoriId)) {
+      return Future.value(_animeMetadataCache[shikimoriId]);
+    }
+    final pending = _animeMetadataRequests[shikimoriId];
+    if (pending != null) return pending;
+
+    final request = _buildMetadata(shikimoriId, base)
+        .then((metadata) {
+          _animeMetadataCache[shikimoriId] = metadata;
+          _animeMetadataCacheAt[shikimoriId] = DateTime.now();
+          return metadata;
+        })
+        .whenComplete(() {
+          _animeMetadataRequests.remove(shikimoriId);
+        });
+    _animeMetadataRequests[shikimoriId] = request;
+    return request;
+  }
+
+  Future<_AnimeMetadata> _buildMetadata(
+    int shikimoriId,
+    ShikimoriAnimeDetails base,
+  ) async {
+    final anilistFuture = _findAniList(base);
+    final kitsuFuture = _findKitsu(base);
+    final jikanFuture = _findJikan(base);
+    final screenshotsFuture = _safeScreenshots(shikimoriId);
+    final yaniFuture = _loadYani(base);
+
+    final anilist = await anilistFuture;
+    final kitsu = await kitsuFuture;
+    final jikan = await jikanFuture;
+    final screenshots = await screenshotsFuture;
+    final yani = await yaniFuture;
+
+    return _AnimeMetadata(
+      details: _enrichWithMetadata(
+        base,
+        anilist: anilist,
+        kitsu: kitsu,
+        jikan: jikan,
+        screenshots: screenshots,
+        yani: yani,
+      ),
+      yani: yani,
+    );
+  }
+
   /// Get anime with all available sources (Shikimori details + AniLibria releases).
   Future<AnimeWithSources> getAnimeWithSources(
     int shikimoriId, {
     bool refresh = false,
+    void Function(AnimeWithSources partial)? onPartial,
   }) async {
     if (!refresh &&
         _animeWithSourcesCache[shikimoriId] != null &&
@@ -210,9 +316,9 @@ class AnimeRepository {
       return _animeWithSourcesCache[shikimoriId]!;
     }
     final pending = _animeWithSourcesRequests[shikimoriId];
-    if (pending != null && !refresh) return pending;
+    if (pending != null) return pending;
 
-    final request = _buildAnimeWithSources(shikimoriId)
+    final request = _buildAnimeWithSources(shikimoriId, onPartial: onPartial)
         .then((animeWithSources) {
           _animeWithSourcesCache[shikimoriId] = animeWithSources;
           _animeWithSourcesCacheAt[shikimoriId] = DateTime.now();
@@ -225,48 +331,57 @@ class AnimeRepository {
     return request;
   }
 
-  Future<AnimeWithSources> _buildAnimeWithSources(int shikimoriId) async {
-    // 1. Shikimori details are the only required request.
-    final shikimoriDetails = await _shikimoriApi.getDetails(shikimoriId);
+  Future<AnimeWithSources> _buildAnimeWithSources(
+    int shikimoriId, {
+    void Function(AnimeWithSources partial)? onPartial,
+  }) async {
+    // 1. Base Shikimori details are the only blocking request.
+    final shikimoriDetails = await getShikimoriDetails(shikimoriId);
     final nameHint = shikimoriDetails.russian.isNotEmpty
         ? shikimoriDetails.russian
         : shikimoriDetails.name;
 
-    // Everything else starts immediately and is allowed to fail independently.
-    // A dead scraper must never prevent the page from opening.
-    final anilistFuture = _findAniList(shikimoriDetails);
-    final kitsuFuture = _findKitsu(shikimoriDetails);
-    final screenshotsFuture = _safeScreenshots(shikimoriDetails.id);
+    // The caller may render the hero with this partial result while sources
+    // and metadata are still loading.
+    onPartial?.call(
+      AnimeWithSources(
+        shikimoriAnime: shikimoriDetails,
+        sources: const [],
+        related: const [],
+      ),
+    );
+
+    // 2. Kick off every independent request immediately. None of them is
+    // allowed to block another one: a dead scraper must never hide the page.
     final releasesFuture = _loadAnilibriaReleases(shikimoriId, nameHint);
     final additionalFuture = _fetchAdditionalSources(shikimoriDetails);
     final relatedFuture = _loadRelated(shikimoriDetails);
+    final metadataFuture = _loadMetadata(shikimoriId, shikimoriDetails);
 
     final releases = await releasesFuture;
+    final metadata = await metadataFuture;
+    final yani = metadata.yani;
 
-    // 2. Merge AniList/Kitsu/Shikimori screenshots into the details.
-    final anilist = await anilistFuture;
-    final kitsu = await kitsuFuture;
-    final screenshots = await screenshotsFuture;
-    var enrichedShikimori = _enrichWithMetadata(
-      shikimoriDetails,
-      anilist: anilist,
-      kitsu: kitsu,
-      screenshots: screenshots,
-    );
-
-    // 3. AniLibria poster fallback.
-    enrichedShikimori = _enrichWithAnilibriaPosters(
-      enrichedShikimori,
+    // 3. AniLibria poster fallback on top of the enriched metadata.
+    final enrichedShikimori = _enrichWithAnilibriaPosters(
+      metadata.details,
       releases,
     );
 
     // 4. Build one studio voiceover per AniLibria release (cast is secondary).
     final sources = <AnimeSource>[];
+    final seenVoices = <String>{};
+    void addSource(AnimeSource source) {
+      final key = _normalizeTitle(source.voiceover.title);
+      if (!seenVoices.add(key.isEmpty ? source.id : key)) return;
+      sources.add(source);
+    }
+
     for (final release in releases) {
       final members = release.voiceActors.isNotEmpty
           ? release.voiceActors
           : release.members;
-      sources.add(
+      addSource(
         AnimeSource(
           id: 'anilibria:${release.id}',
           shikimoriAnime: enrichedShikimori,
@@ -285,19 +400,46 @@ class AnimeRepository {
     // They were requested with the base Shikimori details for speed, so swap
     // in the enriched metadata once AniList/Kitsu/screenshots have arrived.
     final additional = await additionalFuture;
-    sources.addAll(
-      additional.map(
-        (source) => AnimeSource(
+    for (final source in additional) {
+      addSource(
+        AnimeSource(
           id: source.id,
           shikimoriAnime: enrichedShikimori,
           release: source.release,
           voiceover: source.voiceover,
           sourceType: source.sourceType,
         ),
-      ),
-    );
+      );
+    }
 
-    // 6. Related anime from the Shikimori franchise.
+    // 6. YummyAnime studio tracks (the broadest real voiceover catalogue).
+    // They fill in every studio that the scrapers could not reach, including
+    // JAM CLUB, SHIZA Project, AniStar, StudioBand, КОМНАТА ДИДИ and others.
+    final yaniTracks = yani?.tracks ?? const <YaniTrack>[];
+    for (final track in yaniTracks) {
+      if (track.episodes.isEmpty) continue;
+      final release = _createReleaseFromYani(enrichedShikimori, track);
+      final voiceId = _yaniVoiceId(enrichedShikimori.id, track.studio);
+      addSource(
+        AnimeSource(
+          id: 'yani:${enrichedShikimori.id}:$voiceId',
+          shikimoriAnime: enrichedShikimori,
+          release: release,
+          voiceover: GenericVoiceover(
+            id: voiceId,
+            title: track.studio,
+            subtitle: 'yani · ${track.players.join(', ')}',
+            source: 'yani',
+            logoUrl: _yaniStudioLogo(track.studio),
+            participants: track.players,
+            episodeCount: track.episodes.length,
+          ),
+          sourceType: 'yani',
+        ),
+      );
+    }
+
+    // 7. Related anime from the Shikimori franchise.
     final related = await relatedFuture;
 
     return AnimeWithSources(
@@ -322,9 +464,8 @@ class AnimeRepository {
       final loaded = await Future.wait(
         found.map((release) async {
           try {
-            return await _getAnilibriaRelease(
-              release.id,
-            ).timeout(const Duration(seconds: 7));
+            return await _getAnilibriaRelease(release.id)
+                .timeout(const Duration(seconds: 7));
           } catch (_) {
             return release;
           }
@@ -344,8 +485,18 @@ class AnimeRepository {
     try {
       final items = await _shikimoriApi
           .getByFranchise(franchise, limit: 30)
-          .timeout(const Duration(seconds: 6));
-      return items.where((anime) => anime.id != details.id).toList();
+          .timeout(const Duration(seconds: 5));
+      final filtered = items.where((anime) => anime.id != details.id).toList();
+      // Sort by release date (airedOn) from oldest to newest
+      filtered.sort((a, b) {
+        final aDate = a.airedOn;
+        final bDate = b.airedOn;
+        if (aDate == null && bDate == null) return 0;
+        if (aDate == null) return 1;
+        if (bDate == null) return -1;
+        return aDate.compareTo(bDate);
+      });
+      return filtered;
     } catch (_) {
       return const [];
     }
@@ -405,6 +556,20 @@ class AnimeRepository {
     return null;
   }
 
+  Future<JikanAnimeDetails?> _findJikan(ShikimoriAnimeDetails details) async {
+    for (final query in _searchQueries(details)) {
+      try {
+        final media = await _jikanApi
+            .findByTitle(query)
+            .timeout(const Duration(seconds: 6));
+        if (media != null) return media;
+      } catch (_) {
+        // Try the next title variant.
+      }
+    }
+    return null;
+  }
+
   Future<List<String>> _safeScreenshots(int id) async {
     try {
       return await _shikimoriApi
@@ -415,11 +580,33 @@ class AnimeRepository {
     }
   }
 
+  /// Load real voiceover studios and screenshots from YummyAnime.
+  ///
+  /// This is best-effort: the details page must open even when the API is
+  /// unreachable, so every failure collapses to `null`.
+  Future<YaniBundle?> _loadYani(ShikimoriAnimeDetails details) async {
+    final queries = <String>{
+      ..._searchQueries(details),
+      details.russian,
+      details.name,
+    }.map((query) => query.trim()).where((query) => query.isNotEmpty).toList();
+    if (queries.isEmpty) return null;
+    try {
+      return await _yaniApi
+          .findBundle(details.id, queries: queries.take(2).toList())
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      return null;
+    }
+  }
+
   ShikimoriAnimeDetails _enrichWithMetadata(
     ShikimoriAnimeDetails details, {
     required AniListMedia? anilist,
     required KitsuMedia? kitsu,
+    required JikanAnimeDetails? jikan,
     required List<String> screenshots,
+    required YaniBundle? yani,
   }) {
     String? shikimoriTrailer;
     for (final video in details.videos ?? const <ShikimoriVideo>[]) {
@@ -441,32 +628,51 @@ class AnimeRepository {
         anilist?.trailerThumbnail ??
         (trailerUrl == null ? null : _youtubeThumbnail(trailerUrl));
 
+    final yaniPoster = yani?.details?.posterUrl ?? yani?.anime.posterUrl;
+
+    final mergedScreenshots = <String>{...screenshots};
+    for (final shot in yani?.details?.screenshots ?? const <YaniScreenshot>[]) {
+      if (shot.url.isNotEmpty) mergedScreenshots.add(shot.url);
+    }
+
     return details.copyWith(
-      screenshots: screenshots,
+      screenshots: mergedScreenshots.toList(),
       trailerUrl: trailerUrl,
       trailerThumbnail: trailerThumbnail,
-      trailerSite: anilist?.trailerSite ?? (trailerUrl?.contains('youtu') == true ? 'youtube' : null),
-      metadataPoster: anilist?.posterUrl ?? kitsu?.posterUrl,
-      metadataBackground: anilist?.bannerUrl ?? kitsu?.coverUrl,
-      metadataScore: anilist?.score ?? kitsu?.score,
-      metadataYear: anilist?.year ?? kitsu?.year,
-      metadataEpisodes: anilist?.episodes ?? kitsu?.episodes,
+      trailerSite:
+          anilist?.trailerSite ??
+          (trailerUrl?.contains('youtu') == true ? 'youtube' : null),
+      metadataPoster:
+          anilist?.posterUrl ?? kitsu?.posterUrl ?? jikan?.posterUrl ?? yaniPoster,
+      metadataBackground:
+          anilist?.bannerUrl ??
+          kitsu?.coverUrl ??
+          jikan?.backgroundUrl ??
+          yani?.details?.backgroundUrl ??
+          yaniPoster,
+      metadataScore: anilist?.score ?? kitsu?.score ?? jikan?.score,
+      metadataYear: anilist?.year ?? kitsu?.year ?? jikan?.year,
+      metadataEpisodes: anilist?.episodes ?? kitsu?.episodes ?? jikan?.episodeCount,
       metadataDuration: anilist?.duration ?? kitsu?.episodeLength,
       metadataDescription: _preferredDescription(
         anilist?.description,
         kitsu?.synopsis,
+        jikan?.synopsis,
       ),
-      metadataEnglishTitle: anilist?.english ?? kitsu?.englishTitle,
-      metadataGenres: anilist?.genres ?? const [],
-      metadataStudios: anilist?.studios ?? const [],
+      metadataEnglishTitle:
+          anilist?.english ?? kitsu?.englishTitle ?? jikan?.titleEnglish,
+      metadataGenres: anilist?.genres ?? jikan?.allGenres ?? const [],
+      metadataStudios: anilist?.studios ?? jikan?.allStudios ?? const [],
     );
   }
 
-  String? _preferredDescription(String? anilist, String? kitsu) {
+  String? _preferredDescription(String? anilist, String? kitsu, String? jikan) {
     final primary = anilist?.trim();
     if (primary != null && primary.isNotEmpty) return primary;
     final secondary = kitsu?.trim();
     if (secondary != null && secondary.isNotEmpty) return secondary;
+    final tertiary = jikan?.trim();
+    if (tertiary != null && tertiary.isNotEmpty) return tertiary;
     return null;
   }
 
@@ -510,7 +716,7 @@ class AnimeRepository {
     try {
       final entries = await _sourceManager
           .search(query, limit: 20)
-          .timeout(const Duration(seconds: 7));
+          .timeout(const Duration(seconds: 5));
       for (final entry in entries) {
         if (entry.sourceId == 'anilibria') continue; // handled above
         if (seen.add('${entry.sourceId}:${entry.externalId}')) {
@@ -541,7 +747,7 @@ class AnimeRepository {
         try {
           final details = await _sourceManager
               .getDetails(entry.key, entry.value.externalId)
-              .timeout(const Duration(seconds: 6));
+              .timeout(const Duration(seconds: 4));
           if (details != null) detailsBySource[entry.key] = details;
         } catch (_) {
           // A broken scraper must not hide the other sources.
@@ -584,9 +790,8 @@ class AnimeRepository {
     }
 
     additionalSources.sort((a, b) {
-      final bySource = _sourcePriority(
-        a.sourceType,
-      ).compareTo(_sourcePriority(b.sourceType));
+      final bySource = _sourcePriority(a.sourceType)
+          .compareTo(_sourcePriority(b.sourceType));
       if (bySource != 0) return bySource;
       return a.voiceover.title.compareTo(b.voiceover.title);
     });
@@ -754,6 +959,113 @@ class AnimeRepository {
     return '';
   }
 
+  AnimeRelease _createReleaseFromYani(
+    ShikimoriAnimeDetails details,
+    YaniTrack track,
+  ) {
+    final episodes =
+        track.episodes
+            .map(
+              (episode) => AnimeEpisode(
+                id: 'yani:${_stableId(track.studio)}:${episode.ordinal}',
+                ordinal: episode.ordinal,
+                name: 'серия ${episode.ordinal}',
+                hls480: null,
+                hls720: null,
+                hls1080: null,
+                durationSeconds: episode.durationSeconds,
+                previewPath: episode.screenshotUrl,
+                openingStart: episode.openingStart,
+                openingStop: episode.openingStop,
+                endingStart: episode.endingStart,
+                endingStop: episode.endingStop,
+                sortOrder: episode.ordinal,
+                resolverSource: episode.aksorId == null ? null : 'aksor',
+                resolverId: episode.aksorId,
+                embedUrl: episode.embedUrl,
+                embedLabel: episode.embedLabel,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => a.ordinal.compareTo(b.ordinal));
+
+    return AnimeRelease(
+      id: details.id,
+      alias: '',
+      name: details.russian.isNotEmpty ? details.russian : details.name,
+      englishName: details.name,
+      description: details.descriptionText,
+      year: details.year,
+      type: details.kind,
+      season: null,
+      ageRating: details.rating?.toUpperCase(),
+      shikimoriRating: details.scoreValue,
+      internalRating: null,
+      posterPath: details.posterOriginalUrl ?? details.metadataPoster,
+      posterThumbPath: details.posterUrl,
+      backgroundPath: details.backgroundUrl ?? details.metadataBackground,
+      isOngoing: details.isOngoing,
+      isInProduction: details.status == 'anons',
+      episodesTotal: episodes.length,
+      genres: details.allGenres,
+      members: const [],
+      episodes: episodes,
+      publishDay: null,
+      blockedByGeo: false,
+      blockedByCopyrights: false,
+      freshAt: null,
+      notification: null,
+      shikimoriId: details.id,
+    );
+  }
+
+  String _yaniVoiceId(int animeId, String studio) =>
+      'yani_${animeId}_${_stableId(studio)}';
+
+  String _stableId(String value) {
+    var hash = 0x811c9dc5;
+    for (final unit in value.toLowerCase().codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xFFFFFFFF;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  String? _yaniStudioLogo(String studio) {
+    final value = studio.toLowerCase();
+    if (value.contains('anilibria') || value.contains('aniliberty')) {
+      return 'https://anilibria.top/favicon.ico';
+    }
+    if (value.contains('animevost')) {
+      return 'https://animevost.org/favicon.ico';
+    }
+    if (value.contains('anidub')) {
+      return 'https://anidub.com/favicon.ico';
+    }
+    if (value.contains('onwave')) {
+      return 'https://onwave.ru/favicon.ico';
+    }
+    if (value.contains('dreamcast')) {
+      return 'https://dreamerscast.com/favicon.ico';
+    }
+    if (value.contains('jam')) {
+      return 'https://jam-club.ru/favicon.ico';
+    }
+    if (value.contains('shiza')) {
+      return 'https://shiza-project.com/favicon.ico';
+    }
+    if (value.contains('anistar')) {
+      return 'https://anistar.org/favicon.ico';
+    }
+    if (value.contains('anibaza')) {
+      return 'https://anibaza.ru/favicon.ico';
+    }
+    if (value.contains('studioband')) {
+      return 'https://studioband.ru/favicon.ico';
+    }
+    return null;
+  }
+
   AnimeRelease _createReleaseFromSource(
     String sourceId,
     SourceAnimeDetails details, {
@@ -780,37 +1092,33 @@ class AnimeRepository {
       episodesTotal: details.episodes,
       genres: details.genres ?? [],
       members: [],
-      episodes: episodes
-          .map((episode) {
-            final hls480 =
-                episode.hlsUrls['480'] ??
-                episode.mp4Urls['480'] ??
-                episode.hlsUrls['auto'] ??
-                episode.mp4Urls['auto'];
-            final hls720 =
-                episode.hlsUrls['720'] ?? episode.mp4Urls['720'];
-            final hls1080 =
-                episode.hlsUrls['1080'] ?? episode.mp4Urls['1080'];
-            final hasDirect = hls480 != null || hls720 != null || hls1080 != null;
-            return AnimeEpisode(
-              id: '$sourceId:${episode.externalId}',
-              ordinal: episode.ordinal,
-              name: episode.title ?? 'серия ${episode.ordinal}',
-              hls480: hls480,
-              hls720: hls720,
-              hls1080: hls1080,
-              durationSeconds: episode.duration,
-              previewPath: episode.posterUrl,
-              openingStart: null,
-              openingStop: null,
-              endingStart: null,
-              endingStop: null,
-              sortOrder: episode.ordinal,
-              resolverSource: hasDirect ? null : sourceId,
-              resolverId: hasDirect ? null : episode.externalId,
-            );
-          })
-          .toList(),
+      episodes: episodes.map((episode) {
+        final hls480 =
+            episode.hlsUrls['480'] ??
+            episode.mp4Urls['480'] ??
+            episode.hlsUrls['auto'] ??
+            episode.mp4Urls['auto'];
+        final hls720 = episode.hlsUrls['720'] ?? episode.mp4Urls['720'];
+        final hls1080 = episode.hlsUrls['1080'] ?? episode.mp4Urls['1080'];
+        final hasDirect = hls480 != null || hls720 != null || hls1080 != null;
+        return AnimeEpisode(
+          id: '$sourceId:${episode.externalId}',
+          ordinal: episode.ordinal,
+          name: episode.title ?? 'серия ${episode.ordinal}',
+          hls480: hls480,
+          hls720: hls720,
+          hls1080: hls1080,
+          durationSeconds: episode.duration,
+          previewPath: episode.posterUrl,
+          openingStart: null,
+          openingStop: null,
+          endingStart: null,
+          endingStop: null,
+          sortOrder: episode.ordinal,
+          resolverSource: hasDirect ? null : sourceId,
+          resolverId: hasDirect ? null : episode.externalId,
+        );
+      }).toList(),
       publishDay: null,
       blockedByGeo: false,
       blockedByCopyrights: false,
@@ -834,6 +1142,16 @@ class AnimeRepository {
     if (cached != null && cached.isNotEmpty) return cached;
 
     try {
+      if (episode.resolverSource == 'aksor') {
+        final url = await _yaniApi
+            .resolveAksor(episode.resolverId!, quality: quality)
+            .timeout(const Duration(seconds: 12));
+        if (url != null && url.isNotEmpty) {
+          _resolvedStreams[key] = url;
+          return url;
+        }
+        return null;
+      }
       final url = await _sourceManager.streamUrl(
         episode.resolverSource!,
         episode.resolverId!,
@@ -918,11 +1236,24 @@ class AnimeRepository {
     _franchisesAt.clear();
     _releaseRequests.clear();
 
+    _animeMetadataCache.clear();
+    _animeMetadataCacheAt.clear();
+    _animeMetadataRequests.clear();
+
     _animeWithSourcesCache.clear();
     _animeWithSourcesCacheAt.clear();
     _animeWithSourcesRequests.clear();
     _resolvedStreams.clear();
   }
+}
+
+/// Enriched details plus the raw Yani bundle, so the source builder can reuse
+/// the studio tracks without hitting the API a second time.
+class _AnimeMetadata {
+  const _AnimeMetadata({required this.details, required this.yani});
+
+  final ShikimoriAnimeDetails details;
+  final YaniBundle? yani;
 }
 
 /// One voiceover/translation track inside a scraped source.

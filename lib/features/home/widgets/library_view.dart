@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../../core/storage/library_store.dart';
 import '../../../core/utils/format.dart';
@@ -27,27 +28,27 @@ class LibraryView extends StatelessWidget {
   EmptyState _empty() {
     final (icon, title, message) = switch (tab) {
       HomeTab.favorites => (
-        Icons.favorite_border_rounded,
+        AppIcons.heart,
         'в избранном пока пусто',
         'нажмите на сердце на странице аниме — и оно появится здесь.',
       ),
       HomeTab.watching => (
-        Icons.visibility_outlined,
+        AppIcons.eye,
         'вы ничего не смотрите',
         'поставьте закладку «смотрю», чтобы вернуться к сериалу в один клик.',
       ),
       HomeTab.planned => (
-        Icons.bookmark_border_rounded,
+        AppIcons.bookmarkSimple,
         'в планах пока пусто',
         'добавляйте сюда то, что хочется посмотреть чуть позже.',
       ),
       HomeTab.completed => (
-        Icons.check_circle_outline_rounded,
+        AppIcons.checkCircle,
         'просмотренного пока нет',
         'завершённые тайтлы будут храниться здесь.',
       ),
       HomeTab.airing => (
-        Icons.play_circle_outline_rounded,
+        AppIcons.playCircle,
         'ничего нет',
         'перейдите на главную, чтобы выбрать аниме.',
       ),

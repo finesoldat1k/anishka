@@ -33,9 +33,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openAnime(dynamic anime) {
     if (anime is AnimeRelease) {
-      context.push('/anime/${anime.id}');
+      // Negative ids are local Shikimori snapshots (see LibraryStore).
+      if (anime.id < 0) {
+        context.push('/anime/shikimori/${-anime.id}');
+      } else {
+        context.push('/anime/${anime.id}');
+      }
     } else if (anime is ShikimoriAnime) {
-      context.push('/anime/shikimori/${anime.id}');
+      context.push('/anime/shikimori/${anime.id}', extra: anime);
     }
   }
 
@@ -99,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(

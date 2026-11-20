@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../core/theme/app_colors.dart';
 
@@ -23,14 +24,14 @@ class ViewToggle extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _ToggleButton(
-            icon: Icons.grid_view_rounded,
+            icon: AppIcons.squaresFour,
             tooltip: 'сетка',
             selected: mode == AnimeViewMode.grid,
             onTap: () => onChanged(AnimeViewMode.grid),
           ),
           const SizedBox(width: 3),
           _ToggleButton(
-            icon: Icons.view_list_rounded,
+            icon: AppIcons.list,
             tooltip: 'список',
             selected: mode == AnimeViewMode.list,
             onTap: () => onChanged(AnimeViewMode.list),

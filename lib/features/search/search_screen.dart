@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/shikimori_anime.dart';
 import '../../core/repository/anime_repository.dart';
+import '../../core/storage/search_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/errors.dart';
@@ -13,6 +15,7 @@ import '../../core/utils/format.dart';
 import '../../core/utils/layout.dart';
 import '../../ui/widgets/anime_card.dart';
 import '../../ui/widgets/anime_list_tile.dart';
+import '../../ui/widgets/app_image.dart';
 import '../../ui/widgets/state_views.dart';
 import '../../ui/widgets/view_toggle.dart';
 
@@ -121,6 +124,14 @@ class _SearchScreenState extends State<SearchScreen> {
     });
   }
 
+  void _removeHistoryItem(String query) {
+    context.read<SearchStore>().history.removeWhere(
+      (h) => h.toLowerCase() == query.toLowerCase(),
+    );
+    context.read<SearchStore>().persistHistory();
+    setState(() {});
+  }
+
   Future<void> _run(String query, int token) async {
     final repository = context.read<AnimeRepository>();
     try {
@@ -131,6 +142,8 @@ class _SearchScreenState extends State<SearchScreen> {
         _loading = false;
         _error = null;
       });
+      // Add to history on successful search
+      context.read<SearchStore>().addToHistory(query);
     } catch (error) {
       if (!mounted || token != _request) return;
       setState(() {
@@ -142,7 +155,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _open(ShikimoriAnime anime) {
-    context.push('/anime/shikimori/${anime.id}');
+    context.read<SearchStore>().addVisited(anime);
+    context.push('/anime/shikimori/${anime.id}', extra: anime);
   }
 
   void _back() {
@@ -160,7 +174,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final padding = pagePadding(width);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -172,7 +186,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: Row(
                     children: [
                       _RoundButton(
-                        icon: Icons.arrow_back_rounded,
+                        icon: AppIcons.arrowLeft,
                         tooltip: 'назад',
                         onTap: _back,
                       ),
@@ -230,106 +244,118 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildSearchField(bool compact) {
-    return Container(
-      height: 50,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _focusNode.hasFocus
-              ? AppColors.planned.withValues(alpha: 0.55)
-              : AppColors.border,
-        ),
-        boxShadow: [
-          BoxShadow(
+    return FocusableActionDetector(
+      onFocusChange: (hasFocus) => setState(() {}),
+      child: Container(
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
             color: _focusNode.hasFocus
-                ? AppColors.planned.withValues(alpha: 0.14)
-                : Colors.black.withValues(alpha: 0.22),
-            blurRadius: 26,
-            offset: const Offset(0, 8),
+                ? AppColors.planned.withValues(alpha: 0.55)
+                : AppColors.border,
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.search_rounded,
-            size: 20,
-            color: AppColors.textMuted,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              autofocus: true,
-              textInputAction: TextInputAction.search,
-              cursorColor: AppColors.planned,
-              style: const TextStyle(
-                fontFamily: AppFonts.body,
-                fontSize: 14,
-                color: AppColors.text,
-              ),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: 'название аниме',
-                hintStyle: TextStyle(
+          boxShadow: [
+            BoxShadow(
+              color: _focusNode.hasFocus
+                  ? AppColors.planned.withValues(alpha: 0.14)
+                  : Colors.black.withValues(alpha: 0.22),
+              blurRadius: 26,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              AppIcons.magnifyingGlass,
+              size: 20,
+              color: AppColors.textMuted,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                cursorColor: AppColors.planned,
+                style: const TextStyle(
                   fontFamily: AppFonts.body,
                   fontSize: 14,
-                  color: AppColors.textFaint,
+                  color: AppColors.text,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'название аниме',
+                  hintStyle: TextStyle(
+                    fontFamily: AppFonts.body,
+                    fontSize: 14,
+                    color: AppColors.textFaint,
+                  ),
+                ),
+                onChanged: _onChanged,
+                onSubmitted: _submit,
+              ),
+            ),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 1.8),
+                ),
+              )
+            else if (_controller.text.isNotEmpty)
+              IconButton(
+                tooltip: 'очистить',
+                onPressed: _clear,
+                splashRadius: 18,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+                icon: const Icon(
+                  AppIcons.x,
+                  size: 17,
+                  color: AppColors.textMuted,
                 ),
               ),
-              onChanged: _onChanged,
-              onSubmitted: _submit,
-            ),
-          ),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 1.8),
-              ),
-            )
-          else if (_controller.text.isNotEmpty)
-            IconButton(
-              tooltip: 'очистить',
-              onPressed: _clear,
-              splashRadius: 18,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(
-                width: 30,
-                height: 30,
-              ),
-              icon: const Icon(
-                Icons.close_rounded,
-                size: 17,
-                color: AppColors.textMuted,
-              ),
-            )
-          else if (!compact)
-            const Text(
-              'введите название',
-              style: TextStyle(
-                fontFamily: AppFonts.body,
-                fontSize: 10.5,
-                color: AppColors.textFaint,
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _content() {
+    final searchStore = context.watch<SearchStore>();
+
     if (_query.isEmpty) {
       return _SearchStart(
         key: const ValueKey('start'),
         suggestions: _suggestions,
+        history: searchStore.history,
+        visited: searchStore.visited,
         onSuggestion: _useSuggestion,
+        onHistoryTap: _useSuggestion,
+        onHistoryRemove: _removeHistoryItem,
+        onVisitedTap: (anime) {
+          context.push('/anime/shikimori/${anime.id}', extra: anime);
+        },
+        onClearHistory: searchStore.history.isNotEmpty
+            ? () {
+                searchStore.clearHistory();
+                setState(() {});
+              }
+            : null,
+        onClearVisited: searchStore.visited.isNotEmpty
+            ? () {
+                searchStore.clearVisited();
+                setState(() {});
+              }
+            : null,
       );
     }
     if (_error != null) {
@@ -347,7 +373,7 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_results.isEmpty) {
       return EmptyState(
         key: const ValueKey('empty'),
-        icon: Icons.search_off_rounded,
+        icon: AppIcons.magnifyingGlassMinus,
         title: 'ничего не нашлось',
         message: 'попробуйте другое название или проверьте раскладку.',
         actionLabel: 'очистить поиск',
@@ -375,11 +401,25 @@ class _SearchStart extends StatelessWidget {
   const _SearchStart({
     super.key,
     required this.suggestions,
+    required this.history,
+    required this.visited,
     required this.onSuggestion,
+    required this.onHistoryTap,
+    required this.onHistoryRemove,
+    required this.onVisitedTap,
+    this.onClearHistory,
+    this.onClearVisited,
   });
 
   final List<String> suggestions;
+  final List<String> history;
+  final List<VisitedAnime> visited;
   final ValueChanged<String> onSuggestion;
+  final ValueChanged<String> onHistoryTap;
+  final ValueChanged<String> onHistoryRemove;
+  final ValueChanged<VisitedAnime> onVisitedTap;
+  final VoidCallback? onClearHistory;
+  final VoidCallback? onClearVisited;
 
   @override
   Widget build(BuildContext context) {
@@ -401,7 +441,7 @@ class _SearchStart extends StatelessWidget {
                   ),
                 ),
                 child: const Icon(
-                  Icons.travel_explore_rounded,
+                  AppIcons.globe,
                   size: 28,
                   color: AppColors.planned,
                 ),
@@ -433,29 +473,249 @@ class _SearchStart extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 34),
-            const Text(
-              'попробуйте',
-              style: TextStyle(
-                fontFamily: AppFonts.body,
-                fontWeight: FontWeight.w600,
+            if (history.isNotEmpty || visited.isNotEmpty) ...[
+              const SizedBox(height: 34),
+              if (history.isNotEmpty) ...[
+                Row(
+                  children: [
+                    Text(
+                      'история поиска',
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                        letterSpacing: 0.6,
+                        color: AppColors.textFaint,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (onClearHistory != null)
+                      TextButton(
+                        onPressed: onClearHistory,
+                        child: Text(
+                          'очистить',
+                          style: TextStyle(
+                            fontFamily: AppFonts.body,
+                            fontSize: 11,
+                            color: AppColors.planned,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final item in history)
+                      _HistoryChip(
+                        label: item,
+                        onTap: () => onHistoryTap(item),
+                        onRemove: () => onHistoryRemove(item),
+                      ),
+                  ],
+                ),
+              ],
+            if (visited.isNotEmpty) ...[
+              if (history.isNotEmpty) const SizedBox(height: 24),
+              Row(
+                children: [
+                  Text(
+                    'недавно посещённые',
+                    style: TextStyle(
+                      fontFamily: AppFonts.body,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                      letterSpacing: 0.6,
+                      color: AppColors.textFaint,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (onClearVisited != null)
+                    TextButton(
+                      onPressed: onClearVisited,
+                      child: Text(
+                        'очистить',
+                        style: TextStyle(
+                          fontFamily: AppFonts.body,
+                          fontSize: 11,
+                          color: AppColors.planned,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final item in visited)
+                    _VisitedChip(
+                      anime: item,
+                      onTap: () => onVisitedTap(item),
+                    ),
+                ],
+              ),
+            ],
+          ]
+        else ...[
+          const SizedBox(height: 34),
+          const Text(
+            'попробуйте',
+            style: TextStyle(
+              fontFamily: AppFonts.body,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+              letterSpacing: 0.6,
+              color: AppColors.textFaint,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final suggestion in suggestions)
+                _SuggestionChip(
+                  label: suggestion,
+                  onTap: () => onSuggestion(suggestion),
+                ),
+            ],
+          ),
+        ],
+      ],
+    ), 
+  );
+}
+}
+
+class _HistoryChip extends StatelessWidget {
+  const _HistoryChip({
+    required this.label,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface.withValues(alpha: 0.8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: AppFonts.body,
+                  fontSize: 12,
+                  color: AppColors.textSoft,
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: onRemove,
+                borderRadius: BorderRadius.circular(999),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(
+                    AppIcons.x,
+                    size: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VisitedChip extends StatelessWidget {
+  const _VisitedChip({
+    required this.anime,
+    required this.onTap,
+  });
+
+  final VisitedAnime anime;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 120,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (anime.posterUrl != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: AppImage(
+                  url: anime.posterUrl!,
+                  width: 100,
+                  height: 150,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else
+              Container(
+                width: 100,
+                height: 150,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(AppIcons.filmStrip, color: AppColors.textMuted),
+              ),
+            const SizedBox(height: 6),
+            Text(
+              anime.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: AppFonts.display,
+                fontWeight: FontWeight.w500,
                 fontSize: 11,
-                letterSpacing: 0.6,
-                color: AppColors.textFaint,
+                color: AppColors.text,
               ),
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final suggestion in suggestions)
-                  _SuggestionChip(
-                    label: suggestion,
-                    onTap: () => onSuggestion(suggestion),
-                  ),
-              ],
-            ),
+            if (anime.year != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                '${anime.year}',
+                style: TextStyle(
+                  fontFamily: AppFonts.body,
+                  fontSize: 10,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -496,6 +756,30 @@ class _SuggestionChip extends StatelessWidget {
   }
 }
 
+class _SearchGridSkeleton extends StatelessWidget {
+  const _SearchGridSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const CustomScrollView(
+      physics: NeverScrollableScrollPhysics(),
+      slivers: [SliverAnimeGridSkeleton(count: 12)],
+    );
+  }
+}
+
+class _SearchListSkeleton extends StatelessWidget {
+  const _SearchListSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const CustomScrollView(
+      physics: NeverScrollableScrollPhysics(),
+      slivers: [SliverAnimeListSkeleton(count: 8)],
+    );
+  }
+}
+
 class _RoundButton extends StatelessWidget {
   const _RoundButton({
     required this.icon,
@@ -524,30 +808,6 @@ class _RoundButton extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _SearchGridSkeleton extends StatelessWidget {
-  const _SearchGridSkeleton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const CustomScrollView(
-      physics: NeverScrollableScrollPhysics(),
-      slivers: [SliverAnimeGridSkeleton(count: 12)],
-    );
-  }
-}
-
-class _SearchListSkeleton extends StatelessWidget {
-  const _SearchListSkeleton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const CustomScrollView(
-      physics: NeverScrollableScrollPhysics(),
-      slivers: [SliverAnimeListSkeleton(count: 8)],
     );
   }
 }

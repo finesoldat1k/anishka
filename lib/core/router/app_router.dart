@@ -1,7 +1,9 @@
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../core/models/anime_source.dart';
+import '../../core/models/shikimori_anime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/about/about_screen.dart';
@@ -104,7 +106,9 @@ GoRouter createAppRouter() {
         builder: (context, state) {
           final id = int.tryParse(state.pathParameters['id'] ?? '');
           if (id == null || id <= 0) return const _RouteError();
-          return DetailsScreen(shikimoriId: id);
+          final extra = state.extra;
+          final preview = extra is ShikimoriAnime ? extra : null;
+          return DetailsScreen(shikimoriId: id, preview: preview);
         },
       ),
       GoRoute(
@@ -155,11 +159,7 @@ GoRouter createAppRouter() {
           final items = args?.items ?? (extra is List ? extra : null);
           return _subpage(
             state,
-            RelatedScreen(
-              items: items,
-              shikimoriId: id,
-              title: args?.title,
-            ),
+            RelatedScreen(items: items, shikimoriId: id, title: args?.title),
           );
         },
       ),
@@ -207,17 +207,13 @@ GoRouter createAppRouter() {
 }
 
 /// Helper to build a consistent subpage transition.
-CustomTransitionPage<void> _subpage(
-  GoRouterState state,
-  Widget child,
-) {
+CustomTransitionPage<void> _subpage(GoRouterState state, Widget child) {
   return CustomTransitionPage<void>(
     key: state.pageKey,
     child: child,
     transitionDuration: const Duration(milliseconds: 280),
     reverseTransitionDuration: const Duration(milliseconds: 200),
-    transitionsBuilder:
-        (context, animation, secondaryAnimation, child) {
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(
         parent: animation,
         curve: Curves.easeOutCubic,
@@ -247,13 +243,9 @@ class _RouteError extends StatelessWidget {
         opaque: true,
         transitionDuration: const Duration(milliseconds: 200),
         reverseTransitionDuration: const Duration(milliseconds: 150),
-        transitionsBuilder:
-            (context, animation, secondaryAnimation, child) {
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(
-            opacity: CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOut,
-            ),
+            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
             child: child,
           );
         },
@@ -282,7 +274,7 @@ class _RouteError extends StatelessWidget {
                     ),
                   ),
                   child: const Icon(
-                    Icons.explore_off_rounded,
+                    AppIcons.compass,
                     color: AppColors.accentBright,
                     size: 26,
                   ),
@@ -313,7 +305,7 @@ class _RouteError extends StatelessWidget {
                 const SizedBox(height: 20),
                 GradientButton(
                   label: 'на главную',
-                  icon: Icons.home_rounded,
+                  icon: AppIcons.house,
                   onTap: () {
                     if (context.canPop()) {
                       context.pop();

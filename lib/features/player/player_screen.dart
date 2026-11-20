@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/anime_episode.dart';
 import '../../core/models/anime_release.dart';
@@ -19,6 +21,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/errors.dart';
 import '../../core/utils/format.dart';
+import '../../ui/widgets/embed_frame.dart';
 import '../../ui/widgets/gradient_button.dart';
 import '../../ui/widgets/video_surface.dart';
 import '../details/widgets/playback_sheet.dart';
@@ -97,6 +100,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
   List<AnimeEpisode> get _playableEpisodes =>
       _release?.episodes.where((episode) => episode.hasStream).toList() ??
       const [];
+
+  /// Providers that expose only an embed player cannot be fed to media_kit.
+  ///
+  /// On web the iframe is the primary path (these players send no CORS
+  /// headers). On native platforms only a direct resolver (Aksor) can be used;
+  /// otherwise the player offers an external-open action.
+  bool _hasDirectSource(AnimeEpisode episode) {
+    if (episode.streamUrl != null) return true;
+    if (episode.canResolve) return !kIsWeb;
+    return false;
+  }
+
+  bool _useEmbedFor(AnimeEpisode episode) =>
+      episode.embedUrl?.isNotEmpty == true && !_hasDirectSource(episode);
+
+  bool get _isEmbedPlayback => _episode != null && _useEmbedFor(_episode!);
 
   AnimeEpisode? get _previousEpisode {
     final items = _playableEpisodes;
@@ -362,6 +381,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
     String? quality,
     bool autoplay = true,
   }) async {
+    if (_useEmbedFor(episode)) {
+      final player = _player;
+      if (player != null) await player.pause();
+      if (!mounted) return;
+      setState(() {
+        _episode = episode;
+        _voice = voice;
+        _playerError = null;
+        _errorDetails = null;
+        _buffering = false;
+        _completed = false;
+        _playing = false;
+        _controlsVisible = true;
+        _quality = episode.embedLabel ?? 'embed';
+      });
+      _position.value = Duration.zero;
+      _duration.value = episode.duration ?? Duration.zero;
+      _library.saveProgress(
+        releaseId: widget.releaseId,
+        episode: episode.ordinal,
+        voice: voice.id,
+      );
+      return;
+    }
+
     final qualities = _qualityOptions(episode);
     if (qualities.isEmpty) {
       setState(() {
@@ -374,8 +418,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     final desired = quality ?? _quality;
     final resolved = qualities.contains(desired) ? desired : qualities.first;
-    var url =
-        episode.hlsForQuality(resolved) ?? _resolvedStreams[episode.id];
+    var url = episode.hlsForQuality(resolved) ?? _resolvedStreams[episode.id];
     if (url == null || url.isEmpty) {
       setState(() {
         _episode = episode;
@@ -462,6 +505,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _switchQuality(String quality) async {
+    if (_isEmbedPlayback) return;
     final episode = _episode;
     if (episode == null || quality == _quality) return;
     final position = _position.value;
@@ -496,6 +540,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _retryPlayback() async {
+    if (_isEmbedPlayback) return;
     final episode = _episode;
     final voice = _voice;
     if (episode == null || voice == null) return;
@@ -504,6 +549,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _togglePlay() async {
+    if (_isEmbedPlayback) return;
     final player = _player;
     if (player == null) {
       await _retryPlayback();
@@ -588,7 +634,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
       return;
     }
 
-    await _startPlayback(selection.episode, selection.voice);
+    await _startPlayback(
+      selection.episode,
+      selection.voice.id == defaultVoiceoverId && _voice != null
+          ? _voice!
+          : selection.voice,
+    );
   }
 
   Future<void> _setVolume(double value) async {
@@ -650,6 +701,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() => _controlsVisible = false);
     } else {
       _revealControls();
+    }
+  }
+
+  Future<void> _openExternal() async {
+    final url = _episode?.embedUrl;
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('не удалось открыть внешний плеер')),
+      );
     }
   }
 
@@ -769,6 +835,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 640;
 
+    if (_isEmbedPlayback && !_loadingRelease && _loadError == null) {
+      final embedEpisode = episode!;
+      return _EmbedPlayerScaffold(
+        title: release?.displayTitle ?? '',
+        episodeLabel:
+            '${embedEpisode.displayName} · ${_voice?.title ?? 'озвучка'}',
+        playerLabel: embedEpisode.embedLabel ?? '',
+        embedUrl: embedEpisode.embedUrl!,
+        onBack: _goBack,
+        onOpenExternal: () => unawaited(_openExternal()),
+        onEpisodes: _openEpisodePicker,
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Focus(
@@ -785,9 +865,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             children: [
               const ColoredBox(color: Colors.black),
               if (controller != null)
-                Center(
-                  child: VideoSurface(controller: controller),
-                ),
+                Center(child: VideoSurface(controller: controller)),
               Positioned.fill(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -896,6 +974,180 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
+/// Layout for provider-embedded playback.
+///
+/// The iframe sits below a solid header instead of under a translucent
+/// overlay: HTML platform views are rendered by the browser above Flutter's
+/// canvas, so stacking controls on top of them is unreliable.
+class _EmbedPlayerScaffold extends StatelessWidget {
+  const _EmbedPlayerScaffold({
+    required this.title,
+    required this.episodeLabel,
+    required this.playerLabel,
+    required this.embedUrl,
+    required this.onBack,
+    required this.onOpenExternal,
+    required this.onEpisodes,
+  });
+
+  final String title;
+  final String episodeLabel;
+  final String playerLabel;
+  final String embedUrl;
+  final VoidCallback onBack;
+  final VoidCallback onOpenExternal;
+  final VoidCallback onEpisodes;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 640;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Column(
+        children: [
+          ColoredBox(
+            color: AppColors.background,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  compact ? 10 : 18,
+                  8,
+                  compact ? 10 : 18,
+                  10,
+                ),
+                child: Row(
+                  children: [
+                    _IconButton(
+                      icon: AppIcons.arrowLeft,
+                      tooltip: 'назад',
+                      compact: compact,
+                      onTap: onBack,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: AppFonts.display,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              letterSpacing: -0.3,
+                              color: AppColors.text,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            episodeLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: AppFonts.body,
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (playerLabel.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      _GlassPill(
+                        label: playerLabel,
+                        icon: AppIcons.plugs,
+                        compact: compact,
+                      ),
+                    ],
+                    const SizedBox(width: 8),
+                    _IconButton(
+                      icon: AppIcons.arrowSquareOut,
+                      tooltip: 'открыть во внешнем плеере',
+                      compact: compact,
+                      subtle: true,
+                      onTap: onOpenExternal,
+                    ),
+                    const SizedBox(width: 8),
+                    _IconButton(
+                      icon: AppIcons.filmStrip,
+                      tooltip: 'выбрать серию',
+                      compact: compact,
+                      subtle: true,
+                      onTap: onEpisodes,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: kIsWeb
+                ? EmbedFrame(url: embedUrl, title: title)
+                : _ExternalPlayback(onOpen: onOpenExternal),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExternalPlayback extends StatelessWidget {
+  const _ExternalPlayback({required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(AppIcons.plugs, size: 34, color: AppColors.textMuted),
+            const SizedBox(height: 16),
+            const Text(
+              'эта студия отдаёт видео во встроенном плеере',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: AppFonts.display,
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+                letterSpacing: -0.4,
+                color: AppColors.text,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'на этом устройстве встроенный плеер недоступен — '
+              'откройте серию в браузере.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: AppFonts.body,
+                fontSize: 12.5,
+                height: 1.5,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 22),
+            GradientButton(
+              label: 'открыть в браузере',
+              icon: AppIcons.arrowSquareOut,
+              primary: true,
+              onTap: onOpen,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.visible,
@@ -953,7 +1205,7 @@ class _TopBar extends StatelessWidget {
               child: Row(
                 children: [
                   _IconButton(
-                    icon: Icons.arrow_back_rounded,
+                    icon: AppIcons.arrowLeft,
                     tooltip: 'назад',
                     onTap: onBack,
                   ),
@@ -1004,8 +1256,8 @@ class _TopBar extends StatelessWidget {
                               children: [
                                 Icon(
                                   option == quality
-                                      ? Icons.check_rounded
-                                      : Icons.hd_outlined,
+                                      ? AppIcons.check
+                                      : AppIcons.highDefinition,
                                   size: 17,
                                   color: option == quality
                                       ? AppColors.accentBright
@@ -1025,13 +1277,13 @@ class _TopBar extends StatelessWidget {
                           ),
                       ],
                       child: _GlassPill(
-                        icon: Icons.hd_outlined,
+                        icon: AppIcons.highDefinition,
                         label: '${quality}p',
                       ),
                     ),
                   const SizedBox(width: 8),
                   _IconButton(
-                    icon: Icons.video_collection_outlined,
+                    icon: AppIcons.filmStrip,
                     tooltip: 'выбрать серию',
                     onTap: onEpisodes,
                   ),
@@ -1157,8 +1409,8 @@ class _BottomBar extends StatelessWidget {
                           children: [
                             _IconButton(
                               icon: muted
-                                  ? Icons.volume_off_rounded
-                                  : Icons.volume_up_rounded,
+                                  ? AppIcons.speakerSlash
+                                  : AppIcons.speakerHigh,
                               tooltip: muted
                                   ? 'включить звук'
                                   : 'выключить звук',
@@ -1193,14 +1445,14 @@ class _BottomBar extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             _IconButton(
-                              icon: Icons.skip_previous_rounded,
+                              icon: AppIcons.skipBack,
                               tooltip: 'предыдущая серия',
                               onTap: hasPrevious ? onPrevious : null,
                               compact: true,
                             ),
                             SizedBox(width: compact ? 2 : 8),
                             _IconButton(
-                              icon: Icons.replay_10_rounded,
+                              icon: AppIcons.clockCounterClockwise,
                               tooltip: 'назад 10 секунд',
                               onTap: () => unawaited(onSeekBack()),
                               compact: compact,
@@ -1213,14 +1465,14 @@ class _BottomBar extends StatelessWidget {
                             ),
                             SizedBox(width: compact ? 8 : 16),
                             _IconButton(
-                              icon: Icons.forward_10_rounded,
+                              icon: AppIcons.clockClockwise,
                               tooltip: 'вперёд 10 секунд',
                               onTap: () => unawaited(onSeekForward()),
                               compact: compact,
                             ),
                             SizedBox(width: compact ? 2 : 8),
                             _IconButton(
-                              icon: Icons.skip_next_rounded,
+                              icon: AppIcons.skipForward,
                               tooltip: 'следующая серия',
                               onTap: hasNext ? onNext : null,
                               compact: true,
@@ -1253,8 +1505,8 @@ class _BottomBar extends StatelessWidget {
                                       children: [
                                         Icon(
                                           option == rate
-                                              ? Icons.check_rounded
-                                              : Icons.speed_rounded,
+                                              ? AppIcons.check
+                                              : AppIcons.speedometer,
                                           size: 16,
                                           color: option == rate
                                               ? AppColors.accentBright
@@ -1282,8 +1534,8 @@ class _BottomBar extends StatelessWidget {
                               const SizedBox(width: 4),
                               _IconButton(
                                 icon: immersive
-                                    ? Icons.fullscreen_exit_rounded
-                                    : Icons.fullscreen_rounded,
+                                    ? AppIcons.cornersIn
+                                    : AppIcons.cornersOut,
                                 tooltip: immersive
                                     ? 'выйти из полного экрана'
                                     : 'полный экран',
@@ -1506,7 +1758,7 @@ class _SkipButton extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         const Icon(
-                          Icons.skip_next_rounded,
+                          AppIcons.skipForward,
                           size: 17,
                           color: AppColors.accentBright,
                         ),
@@ -1556,7 +1808,7 @@ class _CenterOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     if (error != null) {
       return _CenterCard(
-        icon: Icons.error_outline_rounded,
+        icon: AppIcons.warningCircle,
         title: error!,
         message: errorDetails == null
             ? 'проверьте соединение и попробуйте ещё раз.'
@@ -1564,13 +1816,13 @@ class _CenterOverlay extends StatelessWidget {
         actions: [
           GradientButton(
             label: 'попробовать снова',
-            icon: Icons.refresh_rounded,
+            icon: AppIcons.arrowClockwise,
             onTap: () => unawaited(onRetry()),
             height: 44,
           ),
           GradientButton(
             label: 'выбрать серию',
-            icon: Icons.video_collection_outlined,
+            icon: AppIcons.filmStrip,
             ghost: true,
             onTap: onPickEpisode,
             height: 44,
@@ -1581,20 +1833,20 @@ class _CenterOverlay extends StatelessWidget {
 
     if (completed) {
       return _CenterCard(
-        icon: Icons.check_circle_outline_rounded,
+        icon: AppIcons.checkCircle,
         title: 'серия завершена',
         message: 'можно пересмотреть или сразу перейти к следующей.',
         actions: [
           GradientButton(
             label: 'пересмотреть',
-            icon: Icons.replay_rounded,
+            icon: AppIcons.arrowCounterClockwise,
             onTap: () => unawaited(onReplay()),
             height: 44,
           ),
           if (onNext != null && nextLabel != null)
             GradientButton(
               label: 'смотреть $nextLabel',
-              icon: Icons.play_arrow_rounded,
+              icon: AppIcons.play,
               ghost: true,
               onTap: onNext,
               height: 44,
@@ -1798,7 +2050,7 @@ class _PlayerLoading extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: _IconButton(
-                  icon: Icons.arrow_back_rounded,
+                  icon: AppIcons.arrowLeft,
                   tooltip: 'назад',
                   onTap: onBack,
                   subtle: true,
@@ -1831,19 +2083,19 @@ class _PlayerLoadError extends StatelessWidget {
         children: [
           Center(
             child: _CenterCard(
-              icon: Icons.cloud_off_rounded,
+              icon: AppIcons.cloudSlash,
               title: 'не удалось открыть серию',
               message: message,
               actions: [
                 GradientButton(
                   label: 'попробовать снова',
-                  icon: Icons.refresh_rounded,
+                  icon: AppIcons.arrowClockwise,
                   onTap: onRetry,
                   height: 44,
                 ),
                 GradientButton(
                   label: 'назад',
-                  icon: Icons.arrow_back_rounded,
+                  icon: AppIcons.arrowLeft,
                   ghost: true,
                   onTap: onBack,
                   height: 44,
@@ -1858,7 +2110,7 @@ class _PlayerLoadError extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: _IconButton(
-                  icon: Icons.arrow_back_rounded,
+                  icon: AppIcons.arrowLeft,
                   tooltip: 'назад',
                   onTap: onBack,
                   subtle: true,
@@ -1911,7 +2163,7 @@ class _GlassPill extends StatelessWidget {
   }
 }
 
-class _IconButton extends StatelessWidget {
+class _IconButton extends StatefulWidget {
   const _IconButton({
     required this.icon,
     required this.tooltip,
@@ -1927,32 +2179,93 @@ class _IconButton extends StatelessWidget {
   final bool subtle;
 
   @override
+  State<_IconButton> createState() => _IconButtonState();
+}
+
+class _IconButtonState extends State<_IconButton> with SingleTickerProviderStateMixin {
+  bool _hovered = false;
+  bool _pressed = false;
+  late final AnimationController _pressController;
+  late final Animation<double> _pressAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pressController = AnimationController(
+      duration: const Duration(milliseconds: 100),
+      vsync: this,
+    );
+    _pressAnimation = Tween<double>(begin: 1.0, end: 0.92).animate(
+      CurvedAnimation(parent: _pressController, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pressController.dispose();
+    super.dispose();
+  }
+
+  void _handleTapDown(TapDownDetails _) {
+    if (widget.onTap != null) {
+      _pressController.forward();
+      setState(() => _pressed = true);
+    }
+  }
+
+  void _handleTapUp(TapUpDetails _) {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
+
+  void _handleTapCancel() {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final size = compact ? 34.0 : 40.0;
-    final enabled = onTap != null;
+    final size = widget.compact ? 34.0 : 40.0;
+    final enabled = widget.onTap != null;
+    final bgColor = widget.subtle
+        ? Colors.white.withValues(alpha: 0.055)
+        : Colors.white.withValues(alpha: 0.09);
+    final borderColor = Colors.white.withValues(alpha: widget.subtle ? 0.08 : 0.14);
+
     return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: subtle
-            ? Colors.white.withValues(alpha: 0.055)
-            : Colors.white.withValues(alpha: 0.09),
-        shape: CircleBorder(
-          side: BorderSide(
-            color: Colors.white.withValues(alpha: subtle ? 0.08 : 0.14),
-          ),
-        ),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            width: size,
-            height: size,
-            child: Icon(
-              icon,
-              size: compact ? 19 : 21,
-              color: enabled
-                  ? AppColors.text
-                  : AppColors.textFaint.withValues(alpha: 0.55),
+      message: widget.tooltip,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) {
+          setState(() => _hovered = false);
+          if (_pressed) {
+            _pressController.reverse();
+            setState(() => _pressed = false);
+          }
+        },
+        child: ScaleTransition(
+          scale: _pressAnimation,
+          child: Material(
+            color: _hovered ? bgColor.withValues(alpha: 1.5) : bgColor,
+            shape: CircleBorder(side: BorderSide(color: borderColor)),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: widget.onTap,
+              onTapDown: _handleTapDown,
+              onTapUp: _handleTapUp,
+              onTapCancel: _handleTapCancel,
+              child: SizedBox(
+                width: size,
+                height: size,
+                child: Icon(
+                  widget.icon,
+                  size: widget.compact ? 19 : 21,
+                  color: enabled
+                      ? (_hovered ? AppColors.text : AppColors.textSoft)
+                      : AppColors.textFaint.withValues(alpha: 0.55),
+                ),
+              ),
             ),
           ),
         ),
@@ -1961,7 +2274,7 @@ class _IconButton extends StatelessWidget {
   }
 }
 
-class _PlayButton extends StatelessWidget {
+class _PlayButton extends StatefulWidget {
   const _PlayButton({
     required this.playing,
     required this.onTap,
@@ -1975,35 +2288,89 @@ class _PlayButton extends StatelessWidget {
   final bool big;
 
   @override
+  State<_PlayButton> createState() => _PlayButtonState();
+}
+
+class _PlayButtonState extends State<_PlayButton> with SingleTickerProviderStateMixin {
+  bool _pressed = false;
+  late final AnimationController _pressController;
+  late final Animation<double> _pressAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pressController = AnimationController(
+      duration: const Duration(milliseconds: 100),
+      vsync: this,
+    );
+    _pressAnimation = Tween<double>(begin: 1.0, end: 0.92).animate(
+      CurvedAnimation(parent: _pressController, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pressController.dispose();
+    super.dispose();
+  }
+
+  void _handleTapDown(TapDownDetails _) {
+    _pressController.forward();
+    setState(() => _pressed = true);
+  }
+
+  void _handleTapUp(TapUpDetails _) {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
+
+  void _handleTapCancel() {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final size = big ? 76.0 : (compact ? 48.0 : 56.0);
+    final size = widget.big ? 76.0 : (widget.compact ? 48.0 : 56.0);
+    // _pressed is used in tap handlers; this reference suppresses the unused field warning.
+    final _ = _pressed;
+
     return Tooltip(
-      message: playing ? 'пауза' : 'воспроизвести',
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AppColors.accentGradient,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.24)),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.accent.withValues(alpha: 0.42),
-                  blurRadius: big ? 34 : 20,
-                  spreadRadius: big ? 4 : 1,
+      message: widget.playing ? 'пауза' : 'воспроизвести',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: ScaleTransition(
+          scale: _pressAnimation,
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: widget.onTap,
+              onTapDown: _handleTapDown,
+              onTapUp: _handleTapUp,
+              onTapCancel: _handleTapCancel,
+              child: Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: AppColors.accentGradient,
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.24)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.accent.withValues(alpha: 0.42),
+                      blurRadius: widget.big ? 34 : 20,
+                      spreadRadius: widget.big ? 4 : 1,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Icon(
-              playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-              size: big ? 42 : (compact ? 27 : 32),
-              color: Colors.white,
+                child: Icon(
+                  widget.playing ? AppIcons.pause : AppIcons.play,
+                  size: widget.big ? 42 : (widget.compact ? 27 : 32),
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
         ),

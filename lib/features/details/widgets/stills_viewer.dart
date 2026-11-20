@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../ui/widgets/app_image.dart';
 
 /// Full-screen stills viewer with swipe navigation and thumbnail rail.
@@ -53,7 +53,8 @@ class _StillsViewerState extends State<StillsViewer> {
     if (!_railController.hasClients) return;
     const itemWidth = 88.0;
     const spacing = 8.0;
-    final targetOffset = index * (itemWidth + spacing) -
+    final targetOffset =
+        index * (itemWidth + spacing) -
         (_railController.position.viewportDimension - itemWidth) / 2;
     _railController.animateTo(
       targetOffset.clamp(0.0, _railController.position.maxScrollExtent),
@@ -65,6 +66,7 @@ class _StillsViewerState extends State<StillsViewer> {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.sizeOf(context).width < 760;
+    final isLastImage = _currentIndex == widget.stills.length - 1;
 
     return Container(
       color: Colors.black,
@@ -79,14 +81,7 @@ class _StillsViewerState extends State<StillsViewer> {
             itemBuilder: (context, index) {
               final url = widget.stills[index];
               return Center(
-                child: InteractiveViewer(
-                  minScale: 1,
-                  maxScale: 4,
-                  child: AppImage(
-                    url: url,
-                    fit: BoxFit.contain,
-                  ),
-                ),
+                child: AppImage(url: url, fit: BoxFit.contain),
               );
             },
           ),
@@ -106,32 +101,7 @@ class _StillsViewerState extends State<StillsViewer> {
                   child: SizedBox(
                     width: 44,
                     height: 44,
-                    child: Icon(Icons.close_rounded, size: 22, color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // Counter
-          Positioned(
-            left: isMobile ? 10 : 16,
-            top: isMobile ? 10 : 16,
-            child: SafeArea(
-              bottom: false,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '${_currentIndex + 1} / ${widget.stills.length}',
-                  style: const TextStyle(
-                    fontFamily: AppFonts.body,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
+                    child: Icon(AppIcons.x, size: 22, color: Colors.white),
                   ),
                 ),
               ),
@@ -150,10 +120,12 @@ class _StillsViewerState extends State<StillsViewer> {
                   onTap: () => _goTo(_currentIndex - 1),
                   child: Container(
                     width: isMobile ? 56 : 80,
-                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 16),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMobile ? 8 : 16,
+                    ),
                     alignment: Alignment.centerLeft,
                     child: Icon(
-                      Icons.chevron_left_rounded,
+                      AppIcons.caretLeft,
                       size: isMobile ? 36 : 48,
                       color: Colors.white.withValues(alpha: 0.85),
                     ),
@@ -162,10 +134,10 @@ class _StillsViewerState extends State<StillsViewer> {
               ),
             ),
 
-          // Next arrow
+          // Next arrow - positioned to not overlap close button
           if (_currentIndex < widget.stills.length - 1)
             Positioned(
-              right: 0,
+              right: isLastImage ? (isMobile ? 60 : 80) : 0,
               top: 0,
               bottom: isMobile ? 110 : 140,
               child: Material(
@@ -174,10 +146,12 @@ class _StillsViewerState extends State<StillsViewer> {
                   onTap: () => _goTo(_currentIndex + 1),
                   child: Container(
                     width: isMobile ? 56 : 80,
-                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 16),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMobile ? 8 : 16,
+                    ),
                     alignment: Alignment.centerRight,
                     child: Icon(
-                      Icons.chevron_right_rounded,
+                      AppIcons.caretRight,
                       size: isMobile ? 36 : 48,
                       color: Colors.white.withValues(alpha: 0.85),
                     ),
@@ -224,9 +198,6 @@ class _StillsViewerState extends State<StillsViewer> {
                     final isCurrent = index == _currentIndex;
                     return GestureDetector(
                       onTap: () => _goTo(index),
-                      onHorizontalDragUpdate: (details) {
-                        // Allow horizontal drag to scroll the rail
-                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         curve: Curves.easeOutCubic,
@@ -252,7 +223,9 @@ class _StillsViewerState extends State<StillsViewer> {
                               ),
                               if (isCurrent)
                                 Container(
-                                  color: AppColors.planned.withValues(alpha: 0.18),
+                                  color: AppColors.planned.withValues(
+                                    alpha: 0.18,
+                                  ),
                                 ),
                             ],
                           ),
@@ -271,61 +244,129 @@ class _StillsViewerState extends State<StillsViewer> {
 }
 
 /// Horizontal stills gallery for the details page (draggable, no badges).
-class StillsGallery extends StatelessWidget {
-  const StillsGallery({
-    super.key,
-    required this.stills,
-    this.compact = false,
-  });
+/// Supports hover expand, press animation, and drag scrolling.
+class StillsGallery extends StatefulWidget {
+  const StillsGallery({super.key, required this.stills, this.compact = false});
 
   final List<String> stills;
   final bool compact;
 
   @override
-  Widget build(BuildContext context) {
-    if (stills.isEmpty) return const SizedBox.shrink();
+  State<StillsGallery> createState() => _StillsGalleryState();
+}
 
-    final height = compact ? 118.0 : 172.0;
+class _StillsGalleryState extends State<StillsGallery> {
+  int? _hoveredIndex;
+  int? _pressedIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.stills.isEmpty) return const SizedBox.shrink();
+
+    final height = widget.compact ? 118.0 : 172.0;
     final width = height * 16 / 9;
 
     return SizedBox(
       height: height,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: stills.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          final url = stills[index];
-          return SizedBox(
-            width: width,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => _openViewer(context, index),
-                borderRadius: BorderRadius.circular(12),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    AppImage(
-                      url: url,
-                      borderRadius: BorderRadius.circular(12),
-                      memCacheWidth: 900,
-                    ),
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.all(Radius.circular(12)),
-                        border: Border.fromBorderSide(
-                          BorderSide(color: Color(0x1FFFFFFF)),
-                        ),
-                      ),
-                    ),
-                  ],
+      child: Stack(
+        children: [
+          // Right fade shadow for items that don't fit
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 40,
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerRight,
+                    end: Alignment.centerLeft,
+                    colors: [
+                      Colors.black,
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 1.0],
+                  ),
                 ),
               ),
             ),
-          );
-        },
+          ),
+          ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: widget.stills.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final url = widget.stills[index];
+              final isHovered = _hoveredIndex == index;
+              final isPressed = _pressedIndex == index;
+
+              return MouseRegion(
+                onEnter: (_) => setState(() => _hoveredIndex = index),
+                onExit: (_) => setState(() => _hoveredIndex = null),
+                child: GestureDetector(
+                  onTapDown: (_) => setState(() => _pressedIndex = index),
+                  onTapUp: (_) {
+                    setState(() => _pressedIndex = null);
+                    _openViewer(context, index);
+                  },
+                  onTapCancel: () => setState(() => _pressedIndex = null),
+                  child: AnimatedScale(
+                    scale: isPressed ? 0.96 : (isHovered ? 1.04 : 1.0),
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      width: width + (isHovered ? 16 : 0),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: AppImage(
+                                url: url,
+                                fit: BoxFit.cover,
+                                memCacheWidth: 900,
+                              ),
+                            ),
+                            const DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.all(Radius.circular(12)),
+                                border: Border.fromBorderSide(
+                                  BorderSide(color: Color(0x1FFFFFFF)),
+                                ),
+                              ),
+                            ),
+                            if (isHovered)
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.black.withValues(alpha: 0.3),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -339,10 +380,7 @@ class StillsGallery extends StatelessWidget {
         reverseTransitionDuration: const Duration(milliseconds: 180),
         pageBuilder: (context, animation, secondaryAnimation) => FadeTransition(
           opacity: animation,
-          child: StillsViewer(
-            stills: stills,
-            initialIndex: index,
-          ),
+          child: StillsViewer(stills: widget.stills, initialIndex: index),
         ),
       ),
     );

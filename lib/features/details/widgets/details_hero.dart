@@ -8,10 +8,16 @@ import '../../../core/storage/library_store.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
+import '../../../ui/icons/app_icons.dart';
 import '../../../ui/widgets/app_image.dart';
 import '../../../ui/widgets/gradient_button.dart';
-import '../../../ui/widgets/info_chip.dart';
+import '../../../ui/widgets/trailer_view.dart';
 
+/// Cinematic details hero.
+///
+/// The ambient trailer (muted, looping, no controls) fills the whole width.
+/// Poster and title sit on top of it near the top of the page, so the first
+/// screen already feels like a film rather than a catalogue card.
 class DetailsHero extends StatelessWidget {
   /// Legacy AniLibria-only constructor.
   const DetailsHero.legacy({
@@ -22,8 +28,9 @@ class DetailsHero extends StatelessWidget {
     required this.onToggleFavorite,
     required this.onSelectStatus,
     required this.onRemoveStatus,
-  })  : animeWithSources = null,
-        _legacy = true;
+  }) : animeWithSources = null,
+       librarySnapshot = null,
+       _legacy = true;
 
   /// New Shikimori-based constructor with multiple sources.
   const DetailsHero.sources({
@@ -34,11 +41,16 @@ class DetailsHero extends StatelessWidget {
     required this.onToggleFavorite,
     required this.onSelectStatus,
     required this.onRemoveStatus,
-  })  : release = null,
-        _legacy = false;
+    this.librarySnapshot,
+  }) : release = null,
+       _legacy = false;
 
   final AnimeRelease? release;
   final AnimeWithSources? animeWithSources;
+
+  /// Temporary library snapshot used before the first playable source loads,
+  /// so favourite/status controls work immediately.
+  final AnimeRelease? librarySnapshot;
   final bool compact;
   final VoidCallback onPlay;
   final VoidCallback onToggleFavorite;
@@ -46,38 +58,80 @@ class DetailsHero extends StatelessWidget {
   final VoidCallback onRemoveStatus;
   final bool _legacy;
 
-  /// The primary release for library operations.
-  AnimeRelease? get _primaryRelease => _legacy ? release : animeWithSources?.defaultSource?.release;
+  AnimeRelease? get _primaryRelease => _legacy
+      ? release
+      : (animeWithSources?.defaultSource?.release ?? librarySnapshot);
 
-  /// The primary Shikimori anime for display.
-  ShikimoriAnimeDetails? get _shikimoriAnime => animeWithSources?.shikimoriAnime;
+  ShikimoriAnimeDetails? get _shikimoriAnime =>
+      animeWithSources?.shikimoriAnime;
 
-  /// Whether we have playable episodes.
-  bool get _hasEpisodes => _legacy
-      ? (release?.episodes.isNotEmpty ?? false)
-      : (animeWithSources?.hasEpisodes ?? false);
+  bool get _hasEpisodes {
+    if (_legacy) return release?.episodes.isNotEmpty ?? false;
+    final anime = animeWithSources;
+    if (anime == null) return false;
+    if (anime.sources.isNotEmpty) return anime.hasEpisodes;
+    // Sources are still loading. Keep play enabled for everything that is
+    // not an announced title; the voices page will finish loading them.
+    return anime.shikimoriAnime.status != 'anons';
+  }
 
-  /// Whether playback is blocked.
   bool get _isBlocked => _legacy ? (release?.isBlocked ?? false) : false;
 
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryStore>();
     final primaryRelease = _primaryRelease;
-    final status = primaryRelease != null ? library.statusOf(primaryRelease.id) : null;
-    final favorite = primaryRelease != null ? library.isFavorite(primaryRelease.id) : false;
-    final progress = primaryRelease != null ? library.progressFor(primaryRelease.id) : null;
-    final height = compact ? 460.0 : 490.0;
-    final genres = _legacy
-        ? (release?.displayGenres.take(compact ? 2 : 4).toList() ?? <String>[])
-        : (_shikimoriAnime?.genres?.take(compact ? 2 : 4).map((g) => g.russian).toList() ?? <String>[]);
+    final status = primaryRelease != null
+        ? library.statusOf(primaryRelease.id)
+        : null;
+    final favorite = primaryRelease != null
+        ? library.isFavorite(primaryRelease.id)
+        : false;
+    final progress = primaryRelease != null
+        ? library.progressFor(primaryRelease.id)
+        : null;
+
+    final shikimori = _shikimoriAnime;
+    final displayTitle = _legacy
+        ? (release?.displayTitle ?? '')
+        : (shikimori?.displayTitle ?? '');
+    final english = _legacy ? release?.displayEnglish : shikimori?.englishTitle;
+    final statusLabel = _legacy
+        ? (release?.statusLabel ?? '')
+        : (shikimori?.statusLabel ?? '');
+    final kindLabel = _legacy
+        ? (release?.type ?? '')
+        : (shikimori?.kindLabel ?? '');
+    final score = _legacy ? release?.score : shikimori?.scoreValue;
+    final year = _legacy ? release?.year : shikimori?.year;
+    final episodeCount = _legacy
+        ? release?.episodeCount
+        : shikimori?.episodeCount;
+    final ageRating = _legacy ? release?.ageRating : shikimori?.rating;
+    final poster = _legacy
+        ? release?.posterUrl
+        : (shikimori?.posterOriginalUrl ?? shikimori?.posterUrl);
+    final background = _legacy
+        ? release?.backgroundUrl
+        : (shikimori?.backgroundUrl ?? shikimori?.metadataBackground);
+    final trailerId = _legacy ? null : shikimori?.trailerYoutubeId;
+
+    final meta = <String>[
+      if (year != null) '$year',
+      if (kindLabel.isNotEmpty) kindLabel,
+      if (episodeCount != null && episodeCount > 0) episodesLabel(episodeCount),
+      if (score != null) formatScore(score),
+      if (ageRating != null && ageRating.isNotEmpty) ageRating,
+    ].join('  ·  ');
 
     final playButton = GradientButton(
       label: 'воспроизвести',
-      icon: Icons.play_arrow_rounded,
+      icon: AppIcons.play,
+      primary: true,
       expand: compact,
       onTap: _hasEpisodes && !_isBlocked ? onPlay : null,
       height: 49,
+      tone: GradientButtonTone.play,
     );
 
     final bookmark = _BookmarkButton(
@@ -88,9 +142,10 @@ class DetailsHero extends StatelessWidget {
 
     final favoriteButton = GradientButton(
       label: favorite ? 'в избранном' : 'в избранное',
-      icon: favorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+      icon: AppIcons.heart,
       onTap: onToggleFavorite,
-      ghost: true,
+      tone: GradientButtonTone.favorite,
+      active: favorite,
       expand: compact,
       height: 49,
     );
@@ -100,20 +155,24 @@ class DetailsHero extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               playButton,
-              const SizedBox(height: 10),
+              const SizedBox(height: 9),
               Row(
                 children: [
                   Expanded(child: bookmark),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 9),
                   Expanded(child: favoriteButton),
                 ],
               ),
             ],
           )
-        : Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [playButton, bookmark, favoriteButton],
+        : Row(
+            children: [
+              playButton,
+              const SizedBox(width: 10),
+              bookmark,
+              const SizedBox(width: 10),
+              favoriteButton,
+            ],
           );
 
     final note = _isBlocked
@@ -124,187 +183,172 @@ class DetailsHero extends StatelessWidget {
         ? 'вы остановились на ${progress.episode} серии'
         : null;
 
-    final backgroundUrl = _legacy ? release?.backgroundUrl : _shikimoriAnime?.backgroundUrl;
-    final statusLabel = _legacy ? (release?.statusLabel ?? '') : (_shikimoriAnime?.statusLabel ?? '');
-    final score = _legacy ? (release?.score) : (double.tryParse(_shikimoriAnime?.score ?? '') ?? 0.0);
-    final year = _legacy ? release?.year : _shikimoriAnime?.year;
-    final episodeCount = _legacy ? release?.episodeCount : _shikimoriAnime?.episodeCount;
-    final ageRating = _legacy ? release?.ageRating : _shikimoriAnime?.rating;
-    final displayTitle = _legacy ? (release?.displayTitle ?? '') : (_shikimoriAnime?.displayTitle ?? '');
-    final displayEnglish = _legacy ? release?.displayEnglish : (_shikimoriAnime?.english?.isNotEmpty ?? false ? _shikimoriAnime!.english!.first : null);
+    final height = compact ? 552.0 : 616.0;
+    final posterWidth = compact ? 106.0 : 196.0;
+    final gap = compact ? 16.0 : 28.0;
+
+    // Use trailer as background if available, otherwise use poster/background
+    final hasTrailer = trailerId != null;
 
     return SizedBox(
       height: height,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          AppImage(
-            url: backgroundUrl,
-            alignment: Alignment.topCenter,
-            memCacheWidth: 1900,
-          ),
+          // Background layer: trailer (ambient) or poster/background image
+          if (hasTrailer)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: TrailerView(youtubeId: trailerId, ambient: true),
+              ),
+            )
+          else if (background != null && background.isNotEmpty)
+            AppImage(
+              url: background,
+              alignment: Alignment.topCenter,
+              memCacheWidth: 1900,
+            )
+          else
+            const ColoredBox(color: AppColors.backgroundLift),
+
+          // Scrim gradients for legibility
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
+                  Color(0x7A000000),
                   Color(0x33000000),
-                  Color(0x99060409),
-                  Color(0xFF060409),
+                  Color(0xE60A0A0C),
+                  AppColors.background,
                 ],
-                stops: [0, 0.55, 1],
+                stops: [0, 0.34, 0.8, 1],
+              ),
+            ),
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [Color(0xB30A0A0C), Color(0x000A0A0C)],
+                stops: [0, 0.62],
               ),
             ),
           ),
           Positioned(
             left: 0,
+            right: 0,
             top: 0,
-            bottom: 0,
-            width: compact ? 30 : 260,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    AppColors.background.withValues(alpha: 0.92),
-                    AppColors.background.withValues(alpha: 0),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: compact ? 330 : 360,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    AppColors.background.withValues(alpha: 0),
-                    AppColors.background.withValues(alpha: 0.88),
-                    AppColors.background,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1280),
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(
                     compact ? 18 : 44,
-                    0,
+                    compact ? 78 : 112,
                     compact ? 18 : 44,
-                    compact ? 24 : 32,
+                    0,
                   ),
-                  child: Column(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Wrap(
-                        spacing: 7,
-                        runSpacing: 7,
-                        children: [
-                          InfoChip(
-                            label: statusLabel,
-                            icon: Icons.circle,
-                            accent: _legacy ? (release?.isOngoing ?? false) : (_shikimoriAnime?.isOngoing ?? false),
-                            dense: true,
-                          ),
-                          if (score != null)
-                            InfoChip(
-                              label: formatScore(score),
-                              icon: Icons.star_rounded,
-                              dense: true,
-                            ),
-                          if (year != null)
-                            InfoChip(label: '$year', dense: true),
-                          if (episodeCount != null)
-                            InfoChip(
-                              label: episodesLabel(episodeCount),
-                              dense: true,
-                            ),
-                          if (ageRating != null)
-                            InfoChip(label: ageRating, dense: true),
-                        ],
+                      _Poster(
+                        url: poster,
+                        title: displayTitle,
+                        width: posterWidth,
                       ),
-                      SizedBox(height: compact ? 13 : 17),
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: compact ? 640 : 850,
-                        ),
-                        child: Text(
-                          displayTitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: AppFonts.display,
-                            fontWeight: FontWeight.w700,
-                            fontSize: compact ? 28 : 46,
-                            height: 1.03,
-                            letterSpacing: compact ? -1 : -1.8,
-                            color: Colors.white,
-                            shadows: const [
-                              Shadow(
-                                color: Color(0xAA000000),
-                                blurRadius: 26,
-                                offset: Offset(0, 3),
+                      SizedBox(width: gap),
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: compact ? 2 : 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (statusLabel.isNotEmpty ||
+                                  kindLabel.isNotEmpty)
+                                _StatusLine(
+                                  status: statusLabel,
+                                  kind: kindLabel,
+                                  ongoing: _legacy
+                                      ? (release?.isOngoing ?? false)
+                                      : (shikimori?.isOngoing ?? false),
+                                ),
+                              SizedBox(height: compact ? 8 : 12),
+                              Text(
+                                displayTitle,
+                                maxLines: compact ? 3 : 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: AppFonts.display,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: compact ? 25 : 44,
+                                  height: 1.05,
+                                  letterSpacing: compact ? -1 : -1.8,
+                                  color: Colors.white,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Color(0xB3000000),
+                                      blurRadius: 28,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
                               ),
+                              if (english != null && english.isNotEmpty) ...[
+                                const SizedBox(height: 7),
+                                Text(
+                                  english,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: AppFonts.body,
+                                    fontSize: compact ? 11 : 12.5,
+                                    letterSpacing: 0.2,
+                                    color: AppColors.textSoft.withValues(
+                                      alpha: 0.78,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              if (meta.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  meta.toLowerCase(),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: AppFonts.body,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: compact ? 11 : 12,
+                                    letterSpacing: 0.2,
+                                    color: AppColors.textSoft.withValues(
+                                      alpha: 0.88,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              SizedBox(height: compact ? 15 : 24),
+                              actions,
+                              if (note != null) ...[
+                                const SizedBox(height: 11),
+                                Text(
+                                  note,
+                                  style: TextStyle(
+                                    fontFamily: AppFonts.body,
+                                    fontSize: 11,
+                                    color: _isBlocked
+                                        ? AppColors.danger
+                                        : AppColors.textMuted,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
                       ),
-                      if (displayEnglish != null) ...[
-                        const SizedBox(height: 7),
-                        Text(
-                          displayEnglish,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: AppFonts.body,
-                            fontSize: compact ? 11.5 : 13,
-                            letterSpacing: 0.3,
-                            color: AppColors.textSoft.withValues(alpha: 0.82),
-                          ),
-                        ),
-                      ],
-                      if (genres.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 7,
-                          runSpacing: 7,
-                          children: [
-                            for (final genre in genres)
-                              InfoChip(label: genre, dense: true),
-                          ],
-                        ),
-                      ],
-                      SizedBox(height: compact ? 15 : 22),
-                      actions,
-                      if (note != null) ...[
-                        const SizedBox(height: 11),
-                        Text(
-                          note,
-                          style: TextStyle(
-                            fontFamily: AppFonts.body,
-                            fontSize: 11.5,
-                            color: _isBlocked
-                                ? AppColors.danger
-                                : AppColors.textMuted,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -317,7 +361,97 @@ class DetailsHero extends StatelessWidget {
   }
 }
 
-class _BookmarkButton extends StatelessWidget {
+class _Poster extends StatelessWidget {
+  const _Poster({required this.url, required this.title, required this.width});
+
+  final String? url;
+  final String title;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: AspectRatio(
+        aspectRatio: 2 / 3,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.55),
+                blurRadius: 38,
+                offset: const Offset(0, 18),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(13),
+            child: AppImage(url: url, fallbackLabel: title, memCacheWidth: 520),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusLine extends StatelessWidget {
+  const _StatusLine({
+    required this.status,
+    required this.kind,
+    required this.ongoing,
+  });
+
+  final String status;
+  final String kind;
+  final bool ongoing;
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = ongoing ? AppColors.watching : AppColors.completed;
+    final parts = [status, kind]
+        .where((value) => value.trim().isNotEmpty)
+        .map((value) => value.toLowerCase())
+        .join('  ·  ');
+    return Row(
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: tone,
+            boxShadow: [
+              BoxShadow(
+                color: tone.withValues(alpha: 0.55),
+                blurRadius: 9,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            parts,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: AppFonts.body,
+              fontWeight: FontWeight.w600,
+              fontSize: 10,
+              letterSpacing: 1.5,
+              color: AppColors.textSoft.withValues(alpha: 0.9),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BookmarkButton extends StatefulWidget {
   const _BookmarkButton({
     required this.status,
     required this.onSelected,
@@ -329,98 +463,179 @@ class _BookmarkButton extends StatelessWidget {
   final VoidCallback onRemoved;
 
   @override
+  State<_BookmarkButton> createState() => _BookmarkButtonState();
+}
+
+class _BookmarkButtonState extends State<_BookmarkButton> with SingleTickerProviderStateMixin {
+  bool _hovered = false;
+  bool _pressed = false;
+  late final AnimationController _pressController;
+  late final Animation<double> _pressAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pressController = AnimationController(
+      duration: const Duration(milliseconds: 100),
+      vsync: this,
+    );
+    _pressAnimation = Tween<double>(begin: 1.0, end: 0.97).animate(
+      CurvedAnimation(parent: _pressController, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pressController.dispose();
+    super.dispose();
+  }
+
+  void _handleTapDown(TapDownDetails _) {
+    _pressController.forward();
+    setState(() => _pressed = true);
+  }
+
+  void _handleTapUp(TapUpDetails _) {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
+
+  void _handleTapCancel() {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
+
+  Color get _tone => switch (widget.status) {
+    CollectionStatus.planned => AppColors.planned,
+    CollectionStatus.watching => AppColors.watching,
+    CollectionStatus.completed => AppColors.completed,
+    null => AppColors.accent,
+  };
+
+  @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      tooltip: 'закладка',
-      offset: const Offset(0, 54),
-      onSelected: (value) {
-        if (value == 'remove') {
-          onRemoved();
-          return;
-        }
-        final selected = CollectionStatus.fromStorage(value);
-        if (selected != null) onSelected(selected);
-      },
-      itemBuilder: (context) => [
-        for (final item in CollectionStatus.values)
-          PopupMenuItem<String>(
-            value: item.name,
-            child: Row(
-              children: [
-                Icon(
-                  item == status
-                      ? Icons.check_circle_rounded
-                      : Icons.bookmark_border_rounded,
-                  size: 17,
-                  color: item == status
-                      ? AppColors.accentBright
-                      : AppColors.textMuted,
-                ),
-                const SizedBox(width: 10),
-                Text(item.label),
-              ],
-            ),
-          ),
-        if (status != null)
-          const PopupMenuItem<String>(
-            value: 'remove',
-            child: Row(
-              children: [
-                Icon(Icons.close_rounded, size: 17, color: AppColors.danger),
-                SizedBox(width: 10),
-                Text('убрать закладку'),
-              ],
-            ),
-          ),
-      ],
-      child: Container(
-        height: 49,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        decoration: BoxDecoration(
-          color: AppColors.surface.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: status != null
-                ? AppColors.accent.withValues(alpha: 0.45)
-                : AppColors.borderStrong,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              status == null
-                  ? Icons.bookmark_border_rounded
-                  : Icons.bookmark_rounded,
-              size: 17,
-              color: status == null
-                  ? AppColors.textMuted
-                  : AppColors.accentBright,
-            ),
-            const SizedBox(width: 9),
-            Flexible(
-              child: Text(
-                status?.label ?? 'закладка',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: AppFonts.body,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12.5,
-                  color: AppColors.text,
-                ),
+    final active = widget.status != null;
+    final tone = _tone;
+
+    return ScaleTransition(
+      scale: _pressAnimation,
+      child: PopupMenuButton<String>(
+        tooltip: 'закладка',
+        offset: const Offset(0, 54),
+        onSelected: (value) {
+          if (value == 'remove') {
+            widget.onRemoved();
+            return;
+          }
+          final selected = CollectionStatus.fromStorage(value);
+          if (selected != null) widget.onSelected(selected);
+        },
+        itemBuilder: (context) => [
+          for (final item in CollectionStatus.values)
+            PopupMenuItem<String>(
+              value: item.name,
+              child: Row(
+                children: [
+                  Icon(
+                    item == widget.status
+                        ? AppIcons.checkCircle
+                        : AppIcons.bookmarkSimple,
+                    size: 17,
+                    color: item == widget.status
+                        ? _statusTone(item)
+                        : AppColors.textMuted,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(item.label),
+                ],
               ),
             ),
-            const SizedBox(width: 5),
-            const Icon(
-              Icons.expand_more_rounded,
-              size: 16,
-              color: AppColors.textMuted,
+          if (active)
+            const PopupMenuItem<String>(
+              value: 'remove',
+              child: Row(
+                children: [
+                  Icon(AppIcons.x, size: 17, color: AppColors.danger),
+                  SizedBox(width: 10),
+                  Text('убрать закладку'),
+                ],
+              ),
             ),
-          ],
+        ],
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) {
+            setState(() => _hovered = false);
+            if (_pressed) {
+              _pressController.reverse();
+              setState(() => _pressed = false);
+            }
+          },
+          child: GestureDetector(
+            onTapDown: _handleTapDown,
+            onTapUp: _handleTapUp,
+            onTapCancel: _handleTapCancel,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 170),
+              curve: Curves.easeOutCubic,
+              height: 49,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              decoration: BoxDecoration(
+                color: active
+                    ? tone
+                    : _hovered
+                    ? tone.withValues(alpha: 0.15)
+                    : AppColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: active || _hovered
+                      ? tone.withValues(alpha: active ? 0.8 : 0.4)
+                      : AppColors.borderStrong,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    active ? AppIcons.bookmark : AppIcons.bookmarkSimple,
+                    size: 17,
+                    color: active || _hovered ? Colors.white : AppColors.text,
+                  ),
+                  const SizedBox(width: 9),
+                  Flexible(
+                    child: Text(
+                      widget.status?.label ?? 'закладка',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Icon(
+                    AppIcons.caretDown,
+                    size: 14,
+                    color: active ? Colors.white : AppColors.textMuted,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
+
+  Color _statusTone(CollectionStatus? status) => switch (status) {
+    CollectionStatus.planned => AppColors.planned,
+    CollectionStatus.watching => AppColors.watching,
+    CollectionStatus.completed => AppColors.completed,
+    null => AppColors.textMuted,
+  };
 }

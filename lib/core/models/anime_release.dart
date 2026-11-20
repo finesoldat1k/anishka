@@ -2,6 +2,7 @@ import '../api/api_config.dart';
 import '../api/json_utils.dart';
 import '../utils/format.dart';
 import 'anime_episode.dart';
+import 'shikimori_anime.dart';
 
 class ReleaseMember {
   const ReleaseMember({
@@ -90,6 +91,40 @@ class AnimeRelease {
   final DateTime? freshAt;
   final String? notification;
   final int? shikimoriId;
+
+  /// Local-only library snapshot for favourites/status before a playable
+  /// source exists. The negative id keeps it separate from real AniLibria
+  /// release ids; it is migrated to the real release once sources load.
+  factory AnimeRelease.fromShikimoriDetails(ShikimoriAnimeDetails details) {
+    return AnimeRelease(
+      id: -details.id,
+      alias: details.url,
+      name: details.displayTitle,
+      englishName: details.englishTitle,
+      description: details.descriptionText,
+      year: details.year,
+      type: details.kindLabel,
+      season: null,
+      ageRating: details.rating,
+      shikimoriRating: details.scoreValue,
+      internalRating: null,
+      posterPath: details.posterOriginalUrl,
+      posterThumbPath: details.posterUrl,
+      backgroundPath: details.backgroundUrl,
+      isOngoing: details.isOngoing,
+      isInProduction: details.status == 'anons',
+      episodesTotal: details.episodeCount,
+      genres: details.allGenres,
+      members: const [],
+      episodes: const [],
+      publishDay: null,
+      blockedByGeo: false,
+      blockedByCopyrights: false,
+      freshAt: null,
+      notification: null,
+      shikimoriId: details.id,
+    );
+  }
 
   factory AnimeRelease.fromJson(Map<String, dynamic> json) {
     final nameMap = asMap(json['name']);

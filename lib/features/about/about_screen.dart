@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -22,7 +23,7 @@ class AboutScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 760;
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -41,7 +42,7 @@ class AboutScreen extends StatelessWidget {
                   Row(
                     children: [
                       _RoundButton(
-                        icon: Icons.arrow_back_rounded,
+                        icon: AppIcons.arrowLeft,
                         tooltip: 'назад',
                         onTap: () => _back(context),
                       ),
@@ -63,10 +64,10 @@ class AboutScreen extends StatelessWidget {
                   const SizedBox(height: 14),
                   _Panel(
                     title: 'что это',
-                    icon: Icons.auto_awesome_rounded,
+                    icon: AppIcons.sparkle,
                     compact: compact,
                     child: const Text(
-                      'anishka — спокойный клиент для аниме без лишнего. '
+                      'анишка — спокойный клиент для аниме без лишнего. '
                       'каталог и поиск работают через shikimori, серии '
                       'воспроизводятся с открытых источников, а библиотека '
                       'хранится только на вашем устройстве.',
@@ -76,7 +77,7 @@ class AboutScreen extends StatelessWidget {
                   const SizedBox(height: 14),
                   _Panel(
                     title: 'источники',
-                    icon: Icons.hub_outlined,
+                    icon: AppIcons.broadcast,
                     compact: compact,
                     child: Column(
                       children: [
@@ -111,7 +112,7 @@ class AboutScreen extends StatelessWidget {
                   const SizedBox(height: 14),
                   _Panel(
                     title: 'библиотека',
-                    icon: Icons.lock_outline_rounded,
+                    icon: AppIcons.lock,
                     compact: compact,
                     child: const Text(
                       'избранное, закладки и прогресс просмотра не покидают '
@@ -123,7 +124,7 @@ class AboutScreen extends StatelessWidget {
                   const SizedBox(height: 14),
                   _Panel(
                     title: 'дисклеймер',
-                    icon: Icons.gavel_rounded,
+                    icon: AppIcons.gavel,
                     compact: compact,
                     child: const Text(
                       'приложение не хранит и не распространяет видео. все '
@@ -137,7 +138,7 @@ class AboutScreen extends StatelessWidget {
                   Center(
                     child: GradientButton(
                       label: 'вернуться к каталогу',
-                      icon: Icons.arrow_back_rounded,
+                      icon: AppIcons.arrowLeft,
                       ghost: true,
                       onTap: () => context.go('/'),
                     ),
@@ -145,7 +146,7 @@ class AboutScreen extends StatelessWidget {
                   const SizedBox(height: 14),
                   const Center(
                     child: Text(
-                      'anishka · версия 1.0.0',
+                      'анишка · версия 1.0.0',
                       style: TextStyle(
                         fontFamily: AppFonts.body,
                         fontSize: 10.5,
@@ -209,7 +210,7 @@ class _BrandPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'аниме без лишнего',
+                  'анишка',
                   style: TextStyle(
                     fontFamily: AppFonts.display,
                     fontWeight: FontWeight.w600,
@@ -358,7 +359,7 @@ class _SourceRow extends StatelessWidget {
               ),
             ),
             const Icon(
-              Icons.open_in_new_rounded,
+              AppIcons.arrowSquareOut,
               size: 13,
               color: AppColors.textFaint,
             ),

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
@@ -47,7 +48,7 @@ class HomeHeader extends StatelessWidget {
                   child: Row(
                     children: [
                       const Icon(
-                        Icons.search_rounded,
+                        AppIcons.magnifyingGlass,
                         size: 19,
                         color: AppColors.textMuted,
                       ),
@@ -64,27 +65,6 @@ class HomeHeader extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (!compact)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.background.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(7),
-                            border: Border.all(color: AppColors.border),
-                          ),
-                          child: const Text(
-                            '/',
-                            style: TextStyle(
-                              fontFamily: AppFonts.body,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textFaint,
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -108,7 +88,7 @@ class HomeHeader extends StatelessWidget {
                 width: 48,
                 height: 48,
                 child: Icon(
-                  Icons.info_outline_rounded,
+                  AppIcons.info,
                   size: 20,
                   color: AppColors.textSoft,
                 ),

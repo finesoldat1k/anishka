@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/anime_source.dart';
@@ -227,7 +228,7 @@ class _VoiceoverScreenState extends State<VoiceoverScreen> {
               else if (sources.isEmpty)
                 SliverToBoxAdapter(
                   child: EmptyState(
-                    icon: Icons.graphic_eq_rounded,
+                    icon: AppIcons.waveform,
                     title: 'озвучки пока нет',
                     message:
                         'для этого тайтла не нашлось доступных студий. '
@@ -241,7 +242,7 @@ class _VoiceoverScreenState extends State<VoiceoverScreen> {
                 if (filtered.isEmpty)
                   const SliverToBoxAdapter(
                     child: EmptyState(
-                      icon: Icons.search_off_rounded,
+                      icon: AppIcons.magnifyingGlassMinus,
                       title: 'ничего не найдено',
                       message: 'попробуйте другое название студии.',
                       compact: true,
@@ -321,7 +322,7 @@ class _VoiceSearch extends StatelessWidget {
       child: Row(
         children: [
           const Icon(
-            Icons.search_rounded,
+            AppIcons.magnifyingGlass,
             size: 18,
             color: AppColors.textMuted,
           ),
@@ -354,7 +355,7 @@ class _VoiceSearch extends StatelessWidget {
                 controller.clear();
                 onChanged('');
               },
-              icon: const Icon(Icons.close_rounded, size: 16),
+              icon: const Icon(AppIcons.x, size: 16),
               style: IconButton.styleFrom(
                 foregroundColor: AppColors.textMuted,
                 minimumSize: const Size(28, 28),
@@ -386,8 +387,44 @@ class _VoiceTile extends StatefulWidget {
   State<_VoiceTile> createState() => _VoiceTileState();
 }
 
-class _VoiceTileState extends State<_VoiceTile> {
+class _VoiceTileState extends State<_VoiceTile> with SingleTickerProviderStateMixin {
   bool _hovered = false;
+  bool _pressed = false;
+  late final AnimationController _pressController;
+  late final Animation<double> _pressAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pressController = AnimationController(
+      duration: const Duration(milliseconds: 100),
+      vsync: this,
+    );
+    _pressAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
+      CurvedAnimation(parent: _pressController, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pressController.dispose();
+    super.dispose();
+  }
+
+  void _handleTapDown(TapDownDetails _) {
+    _pressController.forward();
+    setState(() => _pressed = true);
+  }
+
+  void _handleTapUp(TapUpDetails _) {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
+
+  void _handleTapCancel() {
+    _pressController.reverse();
+    setState(() => _pressed = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -398,142 +435,154 @@ class _VoiceTileState extends State<_VoiceTile> {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 170),
-            curve: Curves.easeOutCubic,
-            padding: EdgeInsets.symmetric(
-              horizontal: widget.compact ? 13 : 16,
-              vertical: widget.compact ? 12 : 14,
-            ),
-            decoration: BoxDecoration(
-              color: widget.current
-                  ? tone.withValues(alpha: 0.07)
-                  : _hovered
-                  ? AppColors.surfaceHigh
-                  : AppColors.surface.withValues(alpha: 0.74),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: widget.current
-                    ? tone.withValues(alpha: 0.42)
-                    : _hovered
-                    ? AppColors.borderStrong
-                    : AppColors.border,
+      onExit: (_) {
+        setState(() => _hovered = false);
+        if (_pressed) {
+          _pressController.reverse();
+          setState(() => _pressed = false);
+        }
+      },
+      child: ScaleTransition(
+        scale: _pressAnimation,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            onTapDown: _handleTapDown,
+            onTapUp: _handleTapUp,
+            onTapCancel: _handleTapCancel,
+            borderRadius: BorderRadius.circular(16),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 170),
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.compact ? 13 : 16,
+                vertical: widget.compact ? 12 : 14,
               ),
-            ),
-            child: Row(
-              children: [
-                VoiceAvatar(
-                  title: voice.title,
-                  logoUrl: voice.logoUrl,
-                  size: widget.compact ? 46 : 52,
+              decoration: BoxDecoration(
+                color: widget.current
+                    ? tone.withValues(alpha: 0.07)
+                    : _hovered
+                    ? AppColors.surfaceHigh
+                    : AppColors.surface.withValues(alpha: 0.74),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: widget.current
+                      ? tone.withValues(alpha: 0.42)
+                      : _hovered
+                      ? AppColors.borderStrong
+                      : AppColors.border,
                 ),
-                SizedBox(width: widget.compact ? 13 : 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              voice.title.toLowerCase(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: AppFonts.display,
-                                fontWeight: FontWeight.w600,
-                                fontSize: widget.compact ? 13.5 : 15,
-                                letterSpacing: -0.3,
-                                color: AppColors.text,
-                              ),
-                            ),
-                          ),
-                          if (widget.current) ...[
-                            const SizedBox(width: 8),
-                            _Tag(
-                              label: widget.lastEpisode == null
-                                  ? 'выбрано'
-                                  : 'смотрели · ${widget.lastEpisode} серия',
-                              color: AppColors.planned,
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        voice.subtitle.toLowerCase(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: AppFonts.body,
-                          fontSize: 11,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      Row(
-                        children: [
-                          _Tag(
-                            label: widget.source.sourceType,
-                            color: AppColors.textMuted,
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            '$episodeCount ${_episodesLabel(episodeCount)}',
-                            style: const TextStyle(
-                              fontFamily: AppFonts.body,
-                              fontSize: 10.5,
-                              color: AppColors.textFaint,
-                            ),
-                          ),
-                          if (voice.participants.isNotEmpty) ...[
-                            const SizedBox(width: 7),
-                            const Text(
-                              '·',
-                              style: TextStyle(
-                                color: AppColors.textFaint,
-                                fontSize: 10.5,
-                              ),
-                            ),
-                            const SizedBox(width: 7),
+              ),
+              child: Row(
+                children: [
+                  VoiceAvatar(
+                    title: voice.title,
+                    logoUrl: voice.logoUrl,
+                    size: widget.compact ? 46 : 52,
+                  ),
+                  SizedBox(width: widget.compact ? 13 : 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
                             Flexible(
                               child: Text(
-                                voice.participants.take(3).join(', '),
+                                voice.title.toLowerCase(),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: AppFonts.body,
-                                  fontSize: 10.5,
-                                  color: AppColors.textFaint,
+                                style: TextStyle(
+                                  fontFamily: AppFonts.display,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: widget.compact ? 13.5 : 15,
+                                  letterSpacing: -0.3,
+                                  color: AppColors.text,
                                 ),
                               ),
                             ),
+                            if (widget.current) ...[
+                              const SizedBox(width: 8),
+                              _Tag(
+                                label: widget.lastEpisode == null
+                                    ? 'выбрано'
+                                    : 'смотрели · ${widget.lastEpisode} серия',
+                                color: AppColors.planned,
+                              ),
+                            ],
                           ],
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          voice.subtitle.toLowerCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: AppFonts.body,
+                            fontSize: 11,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Row(
+                          children: [
+                            _Tag(
+                              label: widget.source.sourceType,
+                              color: AppColors.textMuted,
+                            ),
+                            const SizedBox(width: 7),
+                            Text(
+                              '$episodeCount ${_episodesLabel(episodeCount)}',
+                              style: const TextStyle(
+                                fontFamily: AppFonts.body,
+                                fontSize: 10.5,
+                                color: AppColors.textFaint,
+                              ),
+                            ),
+                            if (voice.participants.isNotEmpty) ...[
+                              const SizedBox(width: 7),
+                              const Text(
+                                '·',
+                                style: TextStyle(
+                                  color: AppColors.textFaint,
+                                  fontSize: 10.5,
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Flexible(
+                                child: Text(
+                                  voice.participants.take(3).join(', '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: AppFonts.body,
+                                    fontSize: 10.5,
+                                    color: AppColors.textFaint,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                AnimatedSlide(
-                  offset: _hovered ? const Offset(0.16, 0) : Offset.zero,
-                  duration: const Duration(milliseconds: 170),
-                  curve: Curves.easeOutCubic,
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: _hovered || widget.current
-                        ? AppColors.textSoft
-                        : AppColors.textFaint,
+                  const SizedBox(width: 10),
+                  AnimatedSlide(
+                    offset: _hovered ? const Offset(0.16, 0) : Offset.zero,
+                    duration: const Duration(milliseconds: 170),
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      AppIcons.caretRight,
+                      size: 20,
+                      color: _hovered || widget.current
+                          ? AppColors.textSoft
+                          : AppColors.textFaint,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

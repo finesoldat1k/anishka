@@ -19,6 +19,8 @@ class AnimeEpisode {
     required this.sortOrder,
     this.resolverSource,
     this.resolverId,
+    this.embedUrl,
+    this.embedLabel,
   });
 
   final String id;
@@ -38,6 +40,15 @@ class AnimeEpisode {
   /// Lazy stream resolution for scraped sources (AnimeVost, AniDub, ...).
   final String? resolverSource;
   final String? resolverId;
+
+  /// Embedded provider player (YummyAnime studios, Kodik, Alloha, ...).
+  ///
+  /// On web this URL is rendered in an iframe, which is the only playback path
+  /// for providers that do not send CORS headers. On native platforms the
+  /// direct [resolverSource] path is preferred and the embed is opened
+  /// externally as a fallback.
+  final String? embedUrl;
+  final String? embedLabel;
 
   factory AnimeEpisode.fromJson(Map<String, dynamic> json) {
     final opening = asMap(json['opening']);
@@ -60,6 +71,8 @@ class AnimeEpisode {
       sortOrder: asInt(json['sort_order']),
       resolverSource: asString(json['resolver_source']),
       resolverId: asString(json['resolver_id']),
+      embedUrl: asString(json['embed_url']),
+      embedLabel: asString(json['embed_label']),
     );
   }
 
@@ -73,7 +86,8 @@ class AnimeEpisode {
       resolverId != null &&
       resolverId!.isNotEmpty;
 
-  bool get hasStream => streamUrl != null || canResolve;
+  bool get hasStream =>
+      streamUrl != null || canResolve || (embedUrl?.isNotEmpty ?? false);
 
   AnimeEpisode copyWith({
     String? hls480,
@@ -96,6 +110,8 @@ class AnimeEpisode {
       sortOrder: sortOrder,
       resolverSource: resolverSource,
       resolverId: resolverId,
+      embedUrl: embedUrl,
+      embedLabel: embedLabel,
     );
   }
 
@@ -138,5 +154,7 @@ class AnimeEpisode {
     'sort_order': sortOrder,
     'resolver_source': resolverSource,
     'resolver_id': resolverId,
+    'embed_url': embedUrl,
+    'embed_label': embedLabel,
   };
 }

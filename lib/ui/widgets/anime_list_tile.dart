@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/anime_card_item.dart';
@@ -137,7 +138,7 @@ class _AnimeListTileState extends State<AnimeListTile> {
                             if (adapter.score != null &&
                                 adapter.score! > 0) ...[
                               const Icon(
-                                Icons.star_rounded,
+                                AppIcons.star,
                                 size: 13,
                                 color: AppColors.gold,
                               ),
@@ -169,7 +170,7 @@ class _AnimeListTileState extends State<AnimeListTile> {
                               const Padding(
                                 padding: EdgeInsets.only(left: 8),
                                 child: Icon(
-                                  Icons.favorite_rounded,
+                                  AppIcons.heart,
                                   size: 14,
                                   color: AppColors.accentBright,
                                 ),
@@ -188,7 +189,7 @@ class _AnimeListTileState extends State<AnimeListTile> {
                   ),
                   const SizedBox(width: 10),
                   Icon(
-                    Icons.chevron_right_rounded,
+                    AppIcons.caretRight,
                     size: 20,
                     color: _hovered
                         ? AppColors.accentBright
@@ -212,23 +213,28 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = switch (status) {
+      CollectionStatus.planned => AppColors.planned,
+      CollectionStatus.watching => AppColors.watching,
+      CollectionStatus.completed => AppColors.completed,
+    };
     final label = status == CollectionStatus.watching && episode != null
         ? '${status.label} · $episode серия'
         : status.label;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.14),
+        color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.30)),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
       ),
       child: Text(
         label.toLowerCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: AppFonts.body,
           fontSize: 9.5,
           fontWeight: FontWeight.w600,
-          color: AppColors.accentBright,
+          color: color,
         ),
       ),
     );

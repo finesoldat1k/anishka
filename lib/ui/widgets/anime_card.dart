@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/anime_card_item.dart';
@@ -42,6 +43,7 @@ class _AnimeCardState extends State<AnimeCard> {
               ? '${status.label} · ${progress.episode} серия'
               : status.label)
         : (adapter.isOngoing ? 'онгоинг' : null);
+    final isOngoingPill = status == null && adapter.isOngoing;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -114,7 +116,9 @@ class _AnimeCardState extends State<AnimeCard> {
                             top: 8,
                             child: _GlassPill(
                               label: pillLabel,
-                              accent: status == null,
+                              accent: !isOngoingPill && status == null,
+                              muted: false,
+                              ongoing: isOngoingPill,
                             ),
                           ),
                         if (favorite)
@@ -156,7 +160,7 @@ class _AnimeCardState extends State<AnimeCard> {
                 children: [
                   if (adapter.score != null) ...[
                     const Icon(
-                      Icons.star_rounded,
+                      AppIcons.star,
                       size: 12,
                       color: AppColors.gold,
                     ),
@@ -222,7 +226,7 @@ class _HoverPlay extends StatelessWidget {
         border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
       ),
       child: const Icon(
-        Icons.play_arrow_rounded,
+        AppIcons.play,
         color: Colors.white,
         size: 26,
       ),
@@ -244,7 +248,7 @@ class _FavoriteMark extends StatelessWidget {
         border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
       ),
       child: const Icon(
-        Icons.favorite_rounded,
+        AppIcons.heart,
         size: 14,
         color: AppColors.accentBright,
       ),
@@ -257,26 +261,40 @@ class _GlassPill extends StatelessWidget {
     required this.label,
     this.accent = false,
     this.muted = false,
+    this.ongoing = false,
   });
 
   final String label;
   final bool accent;
   final bool muted;
+  final bool ongoing;
 
   @override
   Widget build(BuildContext context) {
+    Color backgroundColor;
+    Color borderColor;
+    Color textColor;
+
+    if (ongoing) {
+      backgroundColor = AppColors.background.withValues(alpha: 0.85);
+      borderColor = Colors.white.withValues(alpha: 0.18);
+      textColor = Colors.white;
+    } else if (accent) {
+      backgroundColor = AppColors.planned.withValues(alpha: 0.92);
+      borderColor = Colors.white.withValues(alpha: 0.22);
+      textColor = Colors.white;
+    } else {
+      backgroundColor = AppColors.background.withValues(alpha: 0.70);
+      borderColor = Colors.white.withValues(alpha: 0.12);
+      textColor = muted ? AppColors.textSoft : Colors.white;
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       decoration: BoxDecoration(
-        color: accent
-            ? AppColors.accent.withValues(alpha: 0.92)
-            : AppColors.background.withValues(alpha: 0.70),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: accent
-              ? Colors.white.withValues(alpha: 0.22)
-              : Colors.white.withValues(alpha: 0.12),
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Text(
         label.toLowerCase(),
@@ -287,7 +305,7 @@ class _GlassPill extends StatelessWidget {
           fontWeight: FontWeight.w600,
           fontSize: 9.5,
           height: 1.1,
-          color: muted ? AppColors.textSoft : Colors.white,
+          color: textColor,
         ),
       ),
     );

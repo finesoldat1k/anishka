@@ -1,11 +1,12 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:anishka/ui/icons/app_icons.dart';
 
 enum HomeTab {
-  airing('сейчас', Icons.play_circle_outline_rounded),
-  favorites('избранное', Icons.favorite_border_rounded),
-  watching('смотрю', Icons.visibility_outlined),
-  planned('в планах', Icons.bookmark_border_rounded),
-  completed('просмотренно', Icons.check_circle_outline_rounded);
+  airing('сейчас', AppIcons.playCircle),
+  favorites('избранное', AppIcons.heart),
+  watching('смотрю', AppIcons.eye),
+  planned('в планах', AppIcons.bookmarkSimple),
+  completed('просмотренно', AppIcons.checkCircle);
 
   const HomeTab(this.label, this.icon);
 
