@@ -6,6 +6,7 @@ import '../../../core/models/anime_source.dart';
 import '../../../core/models/shikimori_anime.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/description.dart';
 import 'stills_viewer.dart';
 import '../../../ui/widgets/skeleton.dart';
 
@@ -57,26 +58,7 @@ class _DetailsBodyState extends State<DetailsBody> {
   ShikimoriAnimeDetails? get _shikimoriAnime =>
       widget.animeWithSources?.shikimoriAnime;
 
-  static String _cleanDescription(String raw) {
-    // Remove Shikimori/Anilist markup tags like [character=123]Name[/character]
-    // [anime=123]Title[/anime], [manga=123]Title[/manga], [person=123]Name[/person]
-    // [url=...]text[/url], [b]text[/b], [i]text[/i], [u]text[/u], [spoiler]text[/spoiler]
-    String cleaned = raw
-        .replaceAllMapped(
-          RegExp(r'\[(character|anime|manga|person|url|b|i|u|spoiler|quote|code|align|center|left|right|size|color|font|email|img|video|audio)[^\]]*\]'),
-          (match) => '',
-        )
-        .replaceAllMapped(
-          RegExp(r'\[/(character|anime|manga|person|url|b|i|u|spoiler|quote|code|align|center|left|right|size|color|font|email|img|video|audio)\]'),
-          (match) => '',
-        )
-        // Remove any remaining [tag=value] or [/tag] patterns
-        .replaceAllMapped(RegExp(r'\[/?[a-z]+(?:=[^\]]*)?\]'), (match) => '')
-        // Clean up multiple spaces and newlines
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    return cleaned;
-  }
+  static String _cleanDescription(String raw) => cleanAnimeDescription(raw);
 
   @override
   Widget build(BuildContext context) {
@@ -318,8 +300,25 @@ class _PlainMetaLine extends StatelessWidget {
   }
 }
 
+String _stillsLabel(int count) {
+  final mod100 = count % 100;
+  final mod10 = count % 10;
+  final word = (mod100 >= 11 && mod100 <= 14)
+      ? 'кадров'
+      : switch (mod10) {
+          1 => 'кадр',
+          2 || 3 || 4 => 'кадра',
+          _ => 'кадров',
+        };
+  return '$count $word';
+}
+
 class _StillsSection extends StatelessWidget {
-  const _StillsSection({required this.stills, required this.compact, this.loading = false});
+  const _StillsSection({
+    required this.stills,
+    required this.compact,
+    this.loading = false,
+  });
 
   final List<String> stills;
   final bool compact;
@@ -346,6 +345,15 @@ class _StillsSection extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 3),
+          const Text(
+            'загружаем кадры...',
+            style: TextStyle(
+              fontFamily: AppFonts.body,
+              fontSize: 11,
+              color: AppColors.textMuted,
+            ),
+          ),
           SizedBox(height: compact ? 12 : 16),
           _StillsSkeleton(compact: compact),
         ],
@@ -369,6 +377,15 @@ class _StillsSection extends StatelessWidget {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          _stillsLabel(stills.length),
+          style: const TextStyle(
+            fontFamily: AppFonts.body,
+            fontSize: 11,
+            color: AppColors.textMuted,
+          ),
         ),
         SizedBox(height: compact ? 12 : 16),
         StillsGallery(stills: stills, compact: compact),
@@ -398,10 +415,7 @@ class _StillsSkeleton extends StatelessWidget {
         itemBuilder: (context, index) {
           return SizedBox(
             width: width,
-            child: SkeletonBox(
-              height: height,
-              borderRadius: 12,
-            ),
+            child: SkeletonBox(height: height, borderRadius: 12),
           );
         },
       ),

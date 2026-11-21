@@ -33,7 +33,7 @@ static void my_application_activate(GApplication* application) {
   // gtk_header_bar_set_show_close_button(header_bar, TRUE);
   // gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
-  gtk_window_set_title(window, "anishka");
+  gtk_window_set_title(window, "анишка");
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   // media_kit renders video through a GL texture which is not compatible with

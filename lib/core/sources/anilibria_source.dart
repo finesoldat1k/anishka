@@ -9,7 +9,7 @@ import '../../core/models/video_source.dart';
 
 class AniLibriaVideoSource implements VideoSource {
   AniLibriaVideoSource({AniLibriaApi? api, Dio? dio})
-      : _api = api ?? AniLibriaApi(dio: dio);
+    : _api = api ?? AniLibriaApi(dio: dio);
 
   final AniLibriaApi _api;
 
@@ -40,18 +40,22 @@ class AniLibriaVideoSource implements VideoSource {
     final releases = await _api.search(query);
     return releases
         .take(limit)
-        .map((r) => SourceAnimeEntry(
-              sourceId: sourceId,
-              externalId: r.id.toString(),
-              title: r.englishName ?? r.name,
-              russianTitle: r.name,
-              posterUrl: r.posterUrl,
-              year: r.year,
-              kind: r.type?.toLowerCase(),
-              status: r.isOngoing ? 'ongoing' : (r.isInProduction ? 'anons' : 'released'),
-              episodes: r.episodeCount,
-              score: r.score?.toString(),
-            ))
+        .map(
+          (r) => SourceAnimeEntry(
+            sourceId: sourceId,
+            externalId: r.id.toString(),
+            title: r.englishName ?? r.name,
+            russianTitle: r.name,
+            posterUrl: r.posterUrl,
+            year: r.year,
+            kind: r.type?.toLowerCase(),
+            status: r.isOngoing
+                ? 'ongoing'
+                : (r.isInProduction ? 'anons' : 'released'),
+            episodes: r.episodeCount,
+            score: r.score?.toString(),
+          ),
+        )
         .toList();
   }
 
@@ -76,18 +80,20 @@ class AniLibriaVideoSource implements VideoSource {
     try {
       final release = await _api.release(id);
       return release.episodes
-          .map((e) => SourceEpisode(
-                externalId: e.id,
-                ordinal: e.ordinal,
-                title: e.name,
-                duration: e.duration?.inSeconds,
-                posterUrl: e.previewUrl,
-                hlsUrls: {
-                  if (e.hls1080 != null) '1080': e.hls1080!,
-                  if (e.hls720 != null) '720': e.hls720!,
-                  if (e.hls480 != null) '480': e.hls480!,
-                },
-              ))
+          .map(
+            (e) => SourceEpisode(
+              externalId: e.id,
+              ordinal: e.ordinal,
+              title: e.name,
+              duration: e.duration?.inSeconds,
+              posterUrl: e.previewUrl,
+              hlsUrls: {
+                if (e.hls1080 != null) '1080': e.hls1080!,
+                if (e.hls720 != null) '720': e.hls720!,
+                if (e.hls480 != null) '480': e.hls480!,
+              },
+            ),
+          )
           .toList();
     } catch (_) {
       return const [];
@@ -112,24 +118,28 @@ class AniLibriaVideoSource implements VideoSource {
       backgroundUrl: release.backgroundUrl,
       year: release.year,
       kind: release.type?.toLowerCase(),
-      status: release.isOngoing ? 'ongoing' : (release.isInProduction ? 'anons' : 'released'),
+      status: release.isOngoing
+          ? 'ongoing'
+          : (release.isInProduction ? 'anons' : 'released'),
       episodes: release.episodeCount,
       score: release.score?.toString(),
       genres: release.genres,
       studios: release.voiceActors.map((v) => v.nickname).toList(),
       episodesList: release.episodes
-          .map((e) => SourceEpisode(
-                externalId: e.id,
-                ordinal: e.ordinal,
-                title: e.name,
-                duration: e.duration?.inSeconds,
-                posterUrl: e.previewUrl,
-                hlsUrls: {
-                  if (e.hls1080 != null) '1080': e.hls1080!,
-                  if (e.hls720 != null) '720': e.hls720!,
-                  if (e.hls480 != null) '480': e.hls480!,
-                },
-              ))
+          .map(
+            (e) => SourceEpisode(
+              externalId: e.id,
+              ordinal: e.ordinal,
+              title: e.name,
+              duration: e.duration?.inSeconds,
+              posterUrl: e.previewUrl,
+              hlsUrls: {
+                if (e.hls1080 != null) '1080': e.hls1080!,
+                if (e.hls720 != null) '720': e.hls720!,
+                if (e.hls480 != null) '480': e.hls480!,
+              },
+            ),
+          )
           .toList(),
     );
   }

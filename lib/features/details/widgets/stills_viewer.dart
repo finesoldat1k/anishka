@@ -66,7 +66,6 @@ class _StillsViewerState extends State<StillsViewer> {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.sizeOf(context).width < 760;
-    final isLastImage = _currentIndex == widget.stills.length - 1;
 
     return Container(
       color: Colors.black,
@@ -108,11 +107,11 @@ class _StillsViewerState extends State<StillsViewer> {
             ),
           ),
 
-          // Previous arrow
+          // Previous arrow (kept below the close button)
           if (_currentIndex > 0)
             Positioned(
               left: 0,
-              top: 0,
+              top: isMobile ? 68 : 80,
               bottom: isMobile ? 110 : 140,
               child: Material(
                 color: Colors.transparent,
@@ -134,11 +133,11 @@ class _StillsViewerState extends State<StillsViewer> {
               ),
             ),
 
-          // Next arrow - positioned to not overlap close button
+          // Next arrow (kept below the close button)
           if (_currentIndex < widget.stills.length - 1)
             Positioned(
-              right: isLastImage ? (isMobile ? 60 : 80) : 0,
-              top: 0,
+              right: 0,
+              top: isMobile ? 68 : 80,
               bottom: isMobile ? 110 : 140,
               child: Material(
                 color: Colors.transparent,
@@ -268,105 +267,108 @@ class _StillsGalleryState extends State<StillsGallery> {
 
     return SizedBox(
       height: height,
-      child: Stack(
-        children: [
-          // Right fade shadow for items that don't fit
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: 40,
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerRight,
-                    end: Alignment.centerLeft,
-                    colors: [
-                      Colors.black,
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 1.0],
+      child: ClipRect(
+        child: Stack(
+          children: [
+            // Right fade shadow for items that don't fit
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 44,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [
+                        AppColors.background,
+                        AppColors.background.withValues(alpha: 0),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            itemCount: widget.stills.length,
-            separatorBuilder: (context, index) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final url = widget.stills[index];
-              final isHovered = _hoveredIndex == index;
-              final isPressed = _pressedIndex == index;
+            ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: widget.stills.length,
+              separatorBuilder: (context, index) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final url = widget.stills[index];
+                final isHovered = _hoveredIndex == index;
+                final isPressed = _pressedIndex == index;
 
-              return MouseRegion(
-                onEnter: (_) => setState(() => _hoveredIndex = index),
-                onExit: (_) => setState(() => _hoveredIndex = null),
-                child: GestureDetector(
-                  onTapDown: (_) => setState(() => _pressedIndex = index),
-                  onTapUp: (_) {
-                    setState(() => _pressedIndex = null);
-                    _openViewer(context, index);
-                  },
-                  onTapCancel: () => setState(() => _pressedIndex = null),
-                  child: AnimatedScale(
-                    scale: isPressed ? 0.96 : (isHovered ? 1.04 : 1.0),
-                    duration: const Duration(milliseconds: 160),
-                    curve: Curves.easeOutCubic,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
+                return MouseRegion(
+                  onEnter: (_) => setState(() => _hoveredIndex = index),
+                  onExit: (_) => setState(() => _hoveredIndex = null),
+                  child: GestureDetector(
+                    onTapDown: (_) => setState(() => _pressedIndex = index),
+                    onTapUp: (_) {
+                      setState(() => _pressedIndex = null);
+                      _openViewer(context, index);
+                    },
+                    onTapCancel: () => setState(() => _pressedIndex = null),
+                    child: AnimatedScale(
+                      scale: isPressed ? 0.96 : (isHovered ? 1.04 : 1.0),
+                      duration: const Duration(milliseconds: 160),
                       curve: Curves.easeOutCubic,
-                      width: width + (isHovered ? 16 : 0),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: AppImage(
-                                url: url,
-                                fit: BoxFit.cover,
-                                memCacheWidth: 900,
-                              ),
-                            ),
-                            const DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.all(Radius.circular(12)),
-                                border: Border.fromBorderSide(
-                                  BorderSide(color: Color(0x1FFFFFFF)),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOutCubic,
+                        width: width + (isHovered ? 16 : 0),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: AppImage(
+                                  url: url,
+                                  fit: BoxFit.cover,
+                                  memCacheWidth: 900,
                                 ),
                               ),
-                            ),
-                            if (isHovered)
-                              Positioned.fill(
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Colors.transparent,
-                                        Colors.black.withValues(alpha: 0.3),
-                                      ],
-                                    ),
+                              const DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(12),
+                                  ),
+                                  border: Border.fromBorderSide(
+                                    BorderSide(color: Color(0x1FFFFFFF)),
                                   ),
                                 ),
                               ),
-                          ],
+                              if (isHovered)
+                                Positioned.fill(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.black.withValues(alpha: 0.3),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-        ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

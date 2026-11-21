@@ -89,11 +89,7 @@ class AnimeEpisode {
   bool get hasStream =>
       streamUrl != null || canResolve || (embedUrl?.isNotEmpty ?? false);
 
-  AnimeEpisode copyWith({
-    String? hls480,
-    String? hls720,
-    String? hls1080,
-  }) {
+  AnimeEpisode copyWith({String? hls480, String? hls720, String? hls1080}) {
     return AnimeEpisode(
       id: id,
       ordinal: ordinal,

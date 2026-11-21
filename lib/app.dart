@@ -5,14 +5,16 @@ import 'package:provider/provider.dart';
 import 'core/repository/anime_repository.dart';
 import 'core/router/app_router.dart';
 import 'core/storage/library_store.dart';
+import 'core/storage/search_store.dart';
 import 'core/theme/app_scroll_behavior.dart';
 import 'core/theme/app_theme.dart';
 import 'ui/widgets/app_background.dart';
 
 class AnishkaApp extends StatefulWidget {
-  const AnishkaApp({super.key, required this.library});
+  const AnishkaApp({super.key, required this.library, required this.search});
 
   final LibraryStore library;
+  final SearchStore search;
 
   @override
   State<AnishkaApp> createState() => _AnishkaAppState();
@@ -34,9 +36,10 @@ class _AnishkaAppState extends State<AnishkaApp> {
       providers: [
         Provider<AnimeRepository>.value(value: _repository),
         ChangeNotifierProvider<LibraryStore>.value(value: widget.library),
+        ChangeNotifierProvider<SearchStore>.value(value: widget.search),
       ],
       child: MaterialApp.router(
-        title: 'anishka',
+        title: 'анишка',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
         darkTheme: buildAppTheme(),

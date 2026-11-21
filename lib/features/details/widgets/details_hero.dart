@@ -198,8 +198,29 @@ class DetailsHero extends StatelessWidget {
           // Background layer: trailer (ambient) or poster/background image
           if (hasTrailer)
             Positioned.fill(
-              child: IgnorePointer(
-                child: TrailerView(youtubeId: trailerId, ambient: true),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Poster fallback keeps the hero alive on platforms where
+                  // the embed is unavailable or still loading.
+                  if (background != null && background.isNotEmpty)
+                    AppImage(
+                      url: background,
+                      alignment: Alignment.topCenter,
+                      memCacheWidth: 1900,
+                    )
+                  else if (poster != null && poster.isNotEmpty)
+                    AppImage(
+                      url: poster,
+                      alignment: Alignment.topCenter,
+                      memCacheWidth: 1200,
+                    )
+                  else
+                    const ColoredBox(color: AppColors.backgroundLift),
+                  IgnorePointer(
+                    child: TrailerView(youtubeId: trailerId, ambient: true),
+                  ),
+                ],
               ),
             )
           else if (background != null && background.isNotEmpty)
@@ -220,7 +241,7 @@ class DetailsHero extends StatelessWidget {
                 colors: [
                   Color(0x7A000000),
                   Color(0x33000000),
-                  Color(0xE60A0A0C),
+                  Color(0xE60B0A09),
                   AppColors.background,
                 ],
                 stops: [0, 0.34, 0.8, 1],
@@ -232,7 +253,7 @@ class DetailsHero extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
-                colors: [Color(0xB30A0A0C), Color(0x000A0A0C)],
+                colors: [Color(0xB30B0A09), Color(0x000B0A09)],
                 stops: [0, 0.62],
               ),
             ),
@@ -466,7 +487,8 @@ class _BookmarkButton extends StatefulWidget {
   State<_BookmarkButton> createState() => _BookmarkButtonState();
 }
 
-class _BookmarkButtonState extends State<_BookmarkButton> with SingleTickerProviderStateMixin {
+class _BookmarkButtonState extends State<_BookmarkButton>
+    with SingleTickerProviderStateMixin {
   bool _hovered = false;
   bool _pressed = false;
   late final AnimationController _pressController;

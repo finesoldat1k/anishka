@@ -48,7 +48,8 @@ class GradientButton extends StatefulWidget {
   State<GradientButton> createState() => _GradientButtonState();
 }
 
-class _GradientButtonState extends State<GradientButton> with SingleTickerProviderStateMixin {
+class _GradientButtonState extends State<GradientButton>
+    with SingleTickerProviderStateMixin {
   bool _hovered = false;
   bool _pressed = false;
   late final AnimationController _pressController;
@@ -108,7 +109,9 @@ class _GradientButtonState extends State<GradientButton> with SingleTickerProvid
     final primary = widget.primary && !widget.ghost;
 
     final foreground = primary
-        ? (useTone && widget.active ? AppColors.background : AppColors.background)
+        ? (useTone && widget.active
+              ? AppColors.background
+              : AppColors.background)
         : useTone
         ? tone
         : AppColors.text;

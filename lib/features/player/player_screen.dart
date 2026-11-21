@@ -2182,7 +2182,8 @@ class _IconButton extends StatefulWidget {
   State<_IconButton> createState() => _IconButtonState();
 }
 
-class _IconButtonState extends State<_IconButton> with SingleTickerProviderStateMixin {
+class _IconButtonState extends State<_IconButton>
+    with SingleTickerProviderStateMixin {
   bool _hovered = false;
   bool _pressed = false;
   late final AnimationController _pressController;
@@ -2230,7 +2231,9 @@ class _IconButtonState extends State<_IconButton> with SingleTickerProviderState
     final bgColor = widget.subtle
         ? Colors.white.withValues(alpha: 0.055)
         : Colors.white.withValues(alpha: 0.09);
-    final borderColor = Colors.white.withValues(alpha: widget.subtle ? 0.08 : 0.14);
+    final borderColor = Colors.white.withValues(
+      alpha: widget.subtle ? 0.08 : 0.14,
+    );
 
     return Tooltip(
       message: widget.tooltip,
@@ -2291,7 +2294,8 @@ class _PlayButton extends StatefulWidget {
   State<_PlayButton> createState() => _PlayButtonState();
 }
 
-class _PlayButtonState extends State<_PlayButton> with SingleTickerProviderStateMixin {
+class _PlayButtonState extends State<_PlayButton>
+    with SingleTickerProviderStateMixin {
   bool _pressed = false;
   late final AnimationController _pressController;
   late final Animation<double> _pressAnimation;
@@ -2356,7 +2360,9 @@ class _PlayButtonState extends State<_PlayButton> with SingleTickerProviderState
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: AppColors.accentGradient,
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.24)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.24),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: AppColors.accent.withValues(alpha: 0.42),

@@ -3,13 +3,62 @@ import 'package:material_ui/material_ui.dart';
 import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/cache/cache_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../ui/widgets/brand_mark.dart';
 import '../../ui/widgets/gradient_button.dart';
 
-class AboutScreen extends StatelessWidget {
+class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
+
+  @override
+  State<AboutScreen> createState() => _AboutScreenState();
+}
+
+class _AboutScreenState extends State<AboutScreen> {
+  CacheStats _stats = CacheStats.empty;
+  bool _loadingStats = true;
+  bool _clearing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshStats();
+  }
+
+  Future<void> _refreshStats() async {
+    final stats = await CacheService.stats();
+    if (!mounted) return;
+    setState(() {
+      _stats = stats;
+      _loadingStats = false;
+    });
+  }
+
+  Future<void> _clearCache() async {
+    if (_clearing) return;
+    setState(() => _clearing = true);
+    await CacheService.clear();
+    final stats = await CacheService.stats();
+    if (!mounted) return;
+    setState(() {
+      _stats = stats;
+      _clearing = false;
+      _loadingStats = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          'кэш очищен',
+          style: TextStyle(fontFamily: AppFonts.body, fontSize: 13),
+        ),
+        backgroundColor: AppColors.surfaceHigh,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   void _back(BuildContext context) {
     if (context.canPop()) {
@@ -60,7 +109,15 @@ class AboutScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 26),
-                  _BrandPanel(compact: compact),
+                  _BrandPanel(compact: compact, stats: _stats),
+                  const SizedBox(height: 14),
+                  _CachePanel(
+                    compact: compact,
+                    stats: _stats,
+                    loading: _loadingStats,
+                    clearing: _clearing,
+                    onClear: _clearCache,
+                  ),
                   const SizedBox(height: 14),
                   _Panel(
                     title: 'что это',
@@ -102,7 +159,7 @@ class AboutScreen extends StatelessWidget {
                           url: 'https://anidub.com',
                         ),
                         _SourceRow(
-                          name: 'anilist и kitsu',
+                          name: 'anilist, kitsu и jikan',
                           role: 'трейлеры, рейтинги и запасные описания',
                           url: 'https://anilist.co',
                         ),
@@ -172,9 +229,10 @@ const _bodyStyle = TextStyle(
 );
 
 class _BrandPanel extends StatelessWidget {
-  const _BrandPanel({required this.compact});
+  const _BrandPanel({required this.compact, required this.stats});
 
   final bool compact;
+  final CacheStats stats;
 
   @override
   Widget build(BuildContext context) {
@@ -186,16 +244,16 @@ class _BrandPanel extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.accent.withValues(alpha: 0.16),
+            AppColors.planned.withValues(alpha: 0.18),
             AppColors.surface.withValues(alpha: 0.86),
             AppColors.surfaceHigh.withValues(alpha: 0.72),
           ],
         ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.22)),
+        border: Border.all(color: AppColors.planned.withValues(alpha: 0.24)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.accent.withValues(alpha: 0.08),
+            color: AppColors.planned.withValues(alpha: 0.10),
             blurRadius: 40,
             spreadRadius: 6,
           ),
@@ -229,11 +287,267 @@ class _BrandPanel extends StatelessWidget {
                     color: AppColors.textMuted,
                   ),
                 ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _StatPill(icon: AppIcons.sparkle, label: 'версия 1.0.0'),
+                    _StatPill(
+                      icon: AppIcons.images,
+                      label: '${stats.count} в кэше',
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _StatPill extends StatelessWidget {
+  const _StatPill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.planned),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              fontFamily: AppFonts.body,
+              fontSize: 10.5,
+              color: AppColors.textSoft,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CachePanel extends StatelessWidget {
+  const _CachePanel({
+    required this.compact,
+    required this.stats,
+    required this.loading,
+    required this.clearing,
+    required this.onClear,
+  });
+
+  final bool compact;
+  final CacheStats stats;
+  final bool loading;
+  final bool clearing;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      title: 'кэш',
+      icon: AppIcons.images,
+      compact: compact,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (loading)
+                      Container(
+                        width: 110,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      )
+                    else
+                      Text(
+                        stats.label,
+                        style: TextStyle(
+                          fontFamily: AppFonts.display,
+                          fontWeight: FontWeight.w600,
+                          fontSize: compact ? 26 : 32,
+                          letterSpacing: -1,
+                          color: AppColors.text,
+                        ),
+                      ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'постеры, кадры из серий и трейлеры',
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 11.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              _ClearButton(
+                busy: clearing,
+                enabled: !loading && stats.bytes > 0,
+                onTap: onClear,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _MetaText(icon: AppIcons.images, label: '${stats.count} записей'),
+              const SizedBox(width: 16),
+              _MetaText(
+                icon: AppIcons.clockCounterClockwise,
+                label: '${stats.temporaryLabel} в памяти',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClearButton extends StatefulWidget {
+  const _ClearButton({
+    required this.busy,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  State<_ClearButton> createState() => _ClearButtonState();
+}
+
+class _ClearButtonState extends State<_ClearButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = widget.enabled && !widget.busy;
+    return MouseRegion(
+      cursor: active ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() {
+        _hovered = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: active ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: active
+            ? (_) {
+                setState(() => _pressed = false);
+                widget.onTap();
+              }
+            : null,
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.96 : 1,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: active
+                  ? (_hovered
+                        ? AppColors.planned.withValues(alpha: 0.20)
+                        : AppColors.planned.withValues(alpha: 0.12))
+                  : AppColors.surface.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: active
+                    ? AppColors.planned.withValues(alpha: 0.45)
+                    : AppColors.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.busy)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.8,
+                      color: AppColors.planned,
+                    ),
+                  )
+                else
+                  Icon(
+                    AppIcons.x,
+                    size: 15,
+                    color: active ? AppColors.planned : AppColors.textFaint,
+                  ),
+                const SizedBox(width: 7),
+                Text(
+                  widget.busy ? 'очищаем' : 'очистить',
+                  style: TextStyle(
+                    fontFamily: AppFonts.body,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    color: active ? AppColors.planned : AppColors.textFaint,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MetaText extends StatelessWidget {
+  const _MetaText({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: AppColors.textFaint),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(
+            fontFamily: AppFonts.body,
+            fontSize: 11,
+            color: AppColors.textFaint,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -270,13 +584,13 @@ class _Panel extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: AppColors.accent.withValues(alpha: 0.12),
+                  color: AppColors.planned.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: AppColors.accent.withValues(alpha: 0.22),
+                    color: AppColors.planned.withValues(alpha: 0.22),
                   ),
                 ),
-                child: Icon(icon, size: 16, color: AppColors.accentBright),
+                child: Icon(icon, size: 16, color: AppColors.planned),
               ),
               const SizedBox(width: 11),
               Text(
@@ -300,11 +614,7 @@ class _Panel extends StatelessWidget {
 }
 
 class _SourceRow extends StatelessWidget {
-  const _SourceRow({
-    required this.name,
-    required this.role,
-    required this.url,
-  });
+  const _SourceRow({required this.name, required this.role, required this.url});
 
   final String name;
   final String role;
@@ -331,13 +641,13 @@ class _SourceRow extends StatelessWidget {
               width: 6,
               height: 6,
               decoration: const BoxDecoration(
-                color: AppColors.accentBright,
+                color: AppColors.planned,
                 shape: BoxShape.circle,
               ),
             ),
             const SizedBox(width: 11),
             SizedBox(
-              width: 108,
+              width: 118,
               child: Text(
                 name,
                 style: const TextStyle(

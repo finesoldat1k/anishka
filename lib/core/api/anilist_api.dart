@@ -49,7 +49,8 @@ class AniListMedia {
   final String? trailerThumbnail;
   final String? trailerSite;
 
-  String? get displayEnglish => english?.trim().isNotEmpty == true ? english : null;
+  String? get displayEnglish =>
+      english?.trim().isNotEmpty == true ? english : null;
 
   factory AniListMedia.fromJson(Map<String, dynamic> json) {
     final title = (json['title'] as Map<String, dynamic>?) ?? const {};
@@ -65,7 +66,8 @@ class AniListMedia {
     if (trailerId != null && trailerId.isNotEmpty) {
       if (trailerSite == 'youtube') {
         trailerUrl = 'https://www.youtube.com/watch?v=$trailerId';
-        trailerThumbnail ??= 'https://img.youtube.com/vi/$trailerId/hqdefault.jpg';
+        trailerThumbnail ??=
+            'https://img.youtube.com/vi/$trailerId/hqdefault.jpg';
       } else if (trailerSite == 'dailymotion') {
         trailerUrl = 'https://www.dailymotion.com/video/$trailerId';
       }
@@ -86,12 +88,13 @@ class AniListMedia {
       genres: (json['genres'] as List?)?.cast<String>() ?? const [],
       studios: studioNodes is List
           ? studioNodes
-              .whereType<Map<String, dynamic>>()
-              .map((node) => (node['name'] as String? ?? '').trim())
-              .where((name) => name.isNotEmpty)
-              .toList()
+                .whereType<Map<String, dynamic>>()
+                .map((node) => (node['name'] as String? ?? '').trim())
+                .where((name) => name.isNotEmpty)
+                .toList()
           : const [],
-      posterUrl: (cover['extraLarge'] as String?) ?? (cover['large'] as String?),
+      posterUrl:
+          (cover['extraLarge'] as String?) ?? (cover['large'] as String?),
       bannerUrl: json['bannerImage'] as String?,
       trailerUrl: trailerUrl,
       trailerThumbnail: trailerThumbnail,
@@ -119,18 +122,19 @@ class AniListMedia {
 
 class AniListApi {
   AniListApi({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: 'https://graphql.anilist.co',
-                connectTimeout: const Duration(seconds: 12),
-                receiveTimeout: const Duration(seconds: 18),
-                headers: const {
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json',
-                },
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: 'https://graphql.anilist.co',
+              connectTimeout: const Duration(seconds: 12),
+              receiveTimeout: const Duration(seconds: 18),
+              headers: const {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+              },
+            ),
+          );
 
   static const _query = r'''
     query ($search: String) {

@@ -9,18 +9,19 @@ import '../../core/models/shikimori_anime.dart';
 
 class ShikimoriApi {
   ShikimoriApi({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ShikimoriConfig.apiBase,
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 30),
-                headers: {
-                  'User-Agent': 'anishka/1.0',
-                  'Accept': 'application/json',
-                },
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: ShikimoriConfig.apiBase,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 30),
+              headers: {
+                'User-Agent': 'anishka/1.0',
+                'Accept': 'application/json',
+              },
+            ),
+          );
 
   final Dio _dio;
 
@@ -33,14 +34,12 @@ class ShikimoriApi {
     try {
       final response = await _dio.get(
         '/animes',
-        queryParameters: {
-          'search': query,
-          'limit': limit,
-          'order': order,
-        },
+        queryParameters: {'search': query, 'limit': limit, 'order': order},
       );
       final list = response.data as List<dynamic>;
-      return list.map((e) => ShikimoriAnime.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => ShikimoriAnime.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
@@ -54,16 +53,15 @@ class ShikimoriApi {
     String? kind,
   }) async {
     try {
-      final queryParams = <String, dynamic>{
-        'limit': limit,
-        'order': order,
-      };
+      final queryParams = <String, dynamic>{'limit': limit, 'order': order};
       if (status != null) queryParams['status'] = status;
       if (kind != null) queryParams['kind'] = kind;
 
       final response = await _dio.get('/animes', queryParameters: queryParams);
       final list = response.data as List<dynamic>;
-      return list.map((e) => ShikimoriAnime.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => ShikimoriAnime.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
@@ -73,14 +71,19 @@ class ShikimoriApi {
   Future<ShikimoriAnimeDetails> getDetails(int id) async {
     try {
       final response = await _dio.get('/animes/$id');
-      return ShikimoriAnimeDetails.fromJson(response.data as Map<String, dynamic>);
+      return ShikimoriAnimeDetails.fromJson(
+        response.data as Map<String, dynamic>,
+      );
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
   }
 
   /// Get anime by franchise (related releases).
-  Future<List<ShikimoriAnime>> getByFranchise(String franchise, {int limit = 50}) async {
+  Future<List<ShikimoriAnime>> getByFranchise(
+    String franchise, {
+    int limit = 50,
+  }) async {
     try {
       final response = await _dio.get(
         '/animes',
@@ -91,7 +94,9 @@ class ShikimoriApi {
         },
       );
       final list = response.data as List<dynamic>;
-      return list.map((e) => ShikimoriAnime.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => ShikimoriAnime.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

@@ -159,11 +159,7 @@ class _AnimeCardState extends State<AnimeCard> {
               Row(
                 children: [
                   if (adapter.score != null) ...[
-                    const Icon(
-                      AppIcons.star,
-                      size: 12,
-                      color: AppColors.gold,
-                    ),
+                    const Icon(AppIcons.star, size: 12, color: AppColors.gold),
                     const SizedBox(width: 3),
                     Text(
                       formatScore(adapter.score),
@@ -225,11 +221,7 @@ class _HoverPlay extends StatelessWidget {
         ],
         border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
       ),
-      child: const Icon(
-        AppIcons.play,
-        color: Colors.white,
-        size: 26,
-      ),
+      child: const Icon(AppIcons.play, color: Colors.white, size: 26),
     );
   }
 }

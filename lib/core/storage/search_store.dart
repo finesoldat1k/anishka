@@ -64,6 +64,13 @@ class SearchStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  void removeFromHistory(String query) {
+    final trimmed = query.trim();
+    _history.removeWhere((h) => h.toLowerCase() == trimmed.toLowerCase());
+    persistHistory();
+    notifyListeners();
+  }
+
   void addVisited(dynamic anime) {
     final adapter = AnimeCardAdapter(anime);
     final item = VisitedAnime(
@@ -108,10 +115,12 @@ class SearchStore extends ChangeNotifier {
   }
 
   void persistVisited() {
-    unawaited(_prefs.setString(
-      _visitedKey,
-      jsonEncode(_visited.map((v) => v.toJson()).toList()),
-    ));
+    unawaited(
+      _prefs.setString(
+        _visitedKey,
+        jsonEncode(_visited.map((v) => v.toJson()).toList()),
+      ),
+    );
   }
 }
 
@@ -158,7 +167,8 @@ class VisitedAnime {
       score: (json['score'] as num?)?.toDouble(),
       episodeCount: json['episode_count'] as int?,
       isShikimori: json['is_shikimori'] as bool? ?? false,
-      visitedAt: DateTime.tryParse(json['visited_at']?.toString() ?? '') ??
+      visitedAt:
+          DateTime.tryParse(json['visited_at']?.toString() ?? '') ??
           DateTime.now(),
     );
   }

@@ -8,22 +8,22 @@ import '../../core/models/video_source.dart';
 
 class AniDubVideoSource implements VideoSource {
   AniDubVideoSource({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: 'https://anidub.com',
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 30),
-                headers: const {
-                  'User-Agent':
-                      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
-                      '(KHTML, like Gecko) Chrome/122.0 Safari/537.36',
-                  'Accept':
-                      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                  'Accept-Language': 'ru,en;q=0.8',
-                },
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: 'https://anidub.com',
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 30),
+              headers: const {
+                'User-Agent':
+                    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                    '(KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ru,en;q=0.8',
+              },
+            ),
+          );
 
   final Dio _dio;
   final Map<String, String?> _streamCache = {};
@@ -85,8 +85,8 @@ class AniDubVideoSource implements VideoSource {
         final href = link?.attributes['href'];
         if (link == null || href == null || href.isEmpty) continue;
 
-        final rawTitle = item.querySelector('.th-title')?.text.trim() ??
-            link.text.trim();
+        final rawTitle =
+            item.querySelector('.th-title')?.text.trim() ?? link.text.trim();
         final subtitle = item.querySelector('.th-subtitle')?.text.trim();
         final yearText = item
             .querySelectorAll('.th-subtitle')
@@ -166,9 +166,12 @@ class AniDubVideoSource implements VideoSource {
       final ogImage = document
           .querySelector('meta[property="og:image"]')
           ?.attributes['content'];
-      final poster = ogImage ?? document.querySelector('.fposter img, img')?.attributes['src'];
+      final poster =
+          ogImage ??
+          document.querySelector('.fposter img, img')?.attributes['src'];
 
-      final description = document.querySelector('.fdesc')?.text.trim() ??
+      final description =
+          document.querySelector('.fdesc')?.text.trim() ??
           document
               .querySelector('meta[property="og:description"]')
               ?.attributes['content']
@@ -228,18 +231,13 @@ class AniDubVideoSource implements VideoSource {
         final data = span.attributes['data'] as String?;
         if (data == null || data.isEmpty) continue;
         final label = span.text.trim();
-        final ordinal = int.tryParse(
-              RegExp(r'\d+').firstMatch(label)?.group(0) ?? '',
-            ) ??
+        final ordinal =
+            int.tryParse(RegExp(r'\d+').firstMatch(label)?.group(0) ?? '') ??
             fallbackOrdinal;
         final sibnetId = RegExp(r'videoid=(\d+)').firstMatch(data)?.group(1);
         if (sibnetId == null) continue;
         episodes.add(
-          SourceEpisode(
-            externalId: sibnetId,
-            ordinal: ordinal,
-            title: label,
-          ),
+          SourceEpisode(externalId: sibnetId, ordinal: ordinal, title: label),
         );
       }
       episodes.sort((a, b) => a.ordinal.compareTo(b.ordinal));
@@ -279,8 +277,7 @@ class AniDubVideoSource implements VideoSource {
             headers: {
               'Referer': 'https://anidub.com/',
               'Origin': 'https://anidub.com',
-              'Accept':
-                  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             },
           ),
         );
@@ -292,13 +289,13 @@ class AniDubVideoSource implements VideoSource {
   }
 
   List<String> _extractVideoUrls(String source) {
-    final matches = RegExp(
-      r'''https?:[^\s"'<>]+?\.(?:mp4|m3u8)[^\s"'<>]*''',
-    ).allMatches(source);
+    final matches = RegExp(r'''https?:[^\s"'<>]+?\.(?:mp4|m3u8)[^\s"'<>]*''')
+        .allMatches(source);
     final seen = <String>{};
     final urls = <String>[];
     for (final match in matches) {
-      final value = match.group(0)
+      final value = match
+          .group(0)
           ?.replaceAll('&amp;', '&')
           .replaceAll(r'\u0026', '&')
           .replaceAll(r'\/', '/');

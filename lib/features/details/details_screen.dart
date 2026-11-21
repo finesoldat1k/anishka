@@ -11,6 +11,7 @@ import '../../core/models/anime_source.dart';
 import '../../core/models/shikimori_anime.dart';
 import '../../core/repository/anime_repository.dart';
 import '../../core/storage/library_store.dart';
+import '../../core/storage/search_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/errors.dart';
@@ -48,8 +49,10 @@ class _DetailsScreenState extends State<DetailsScreen> {
   AnimeRelease? _release; // For legacy AniLibria-only flow
   List<dynamic> _related = const [];
   bool _loading = true;
-  bool _fullDataLoaded = false; // Track when full data (stills, related) is ready
+  bool _fullDataLoaded =
+      false; // Track when full data (stills, related) is ready
   bool _refreshing = false;
+  bool _visitedSaved = false;
   String? _error;
 
   @override
@@ -105,6 +108,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
         final franchises = await franchiseFuture;
         if (!mounted) return;
         context.read<LibraryStore>().syncSnapshot(release);
+        _rememberVisited(release);
         setState(() {
           _release = release;
           _related = relatedReleasesFor(franchises, release.id);
@@ -166,6 +170,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
   void _applyDetails(ShikimoriAnimeDetails details) {
+    _rememberVisited(details);
     final current = _animeWithSources;
     setState(() {
       _animeWithSources = AnimeWithSources(
@@ -180,6 +185,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
   void _applyFull(AnimeWithSources anime) {
+    _rememberVisited(anime.shikimoriAnime);
     final defaultSource = anime.defaultSource;
     final library = context.read<LibraryStore>();
     if (defaultSource != null) {
@@ -195,6 +201,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
       _fullDataLoaded = true; // Full data now ready
       _error = null;
     });
+  }
+
+  void _rememberVisited(dynamic anime) {
+    if (_visitedSaved) return;
+    _visitedSaved = true;
+    context.read<SearchStore>().addVisited(anime);
   }
 
   /// Temporary library item so favourite/status buttons work before sources

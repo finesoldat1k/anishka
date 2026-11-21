@@ -45,18 +45,19 @@ class SourceAnimeEntry {
     this.score,
   });
 
-  final String sourceId;      // 'anilibria', 'animevost', etc.
-  final String externalId;    // Source-specific ID
-  final String title;         // Original/English title
+  final String sourceId; // 'anilibria', 'animevost', etc.
+  final String externalId; // Source-specific ID
+  final String title; // Original/English title
   final String? russianTitle; // Russian title
   final String? posterUrl;
   final int? year;
-  final String? kind;         // tv, movie, ova, etc.
-  final String? status;       // ongoing, released, etc.
+  final String? kind; // tv, movie, ova, etc.
+  final String? status; // ongoing, released, etc.
   final int? episodes;
   final String? score;
 
-  String get displayTitle => russianTitle?.isNotEmpty == true ? russianTitle! : title;
+  String get displayTitle =>
+      russianTitle?.isNotEmpty == true ? russianTitle! : title;
 }
 
 /// Detailed anime from a specific source
@@ -95,7 +96,8 @@ class SourceAnimeDetails {
   final List<String>? studios;
   final List<SourceEpisode> episodesList;
 
-  String get displayTitle => russianTitle?.isNotEmpty == true ? russianTitle! : title;
+  String get displayTitle =>
+      russianTitle?.isNotEmpty == true ? russianTitle! : title;
 }
 
 /// Episode from a specific source
@@ -106,8 +108,8 @@ class SourceEpisode {
     this.title,
     this.duration,
     this.posterUrl,
-    this.hlsUrls = const {},      // quality -> HLS URL
-    this.mp4Urls = const {},      // quality -> MP4 URL
+    this.hlsUrls = const {}, // quality -> HLS URL
+    this.mp4Urls = const {}, // quality -> MP4 URL
     this.voiceId,
     this.voiceTitle,
     this.voiceLogoUrl,
@@ -118,8 +120,8 @@ class SourceEpisode {
   final String? title;
   final int? duration; // seconds
   final String? posterUrl;
-  final Map<String, String> hlsUrls;     // '1080' -> url
-  final Map<String, String> mp4Urls;     // '1080' -> url
+  final Map<String, String> hlsUrls; // '1080' -> url
+  final Map<String, String> mp4Urls; // '1080' -> url
 
   /// Some providers (Kodik) return one entry per translation. These fields
   /// let the repository split a title into separate voiceover tracks.

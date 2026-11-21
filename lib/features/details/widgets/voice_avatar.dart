@@ -42,7 +42,11 @@ class VoiceAvatar extends StatelessWidget {
       final word = words.first;
       return word.characters.take(2).join().toUpperCase();
     }
-    return words.take(2).map((word) => word.characters.first).join().toUpperCase();
+    return words
+        .take(2)
+        .map((word) => word.characters.first)
+        .join()
+        .toUpperCase();
   }
 
   Color get _tone {

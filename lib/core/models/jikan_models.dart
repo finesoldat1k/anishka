@@ -82,9 +82,8 @@ class JikanAnime {
       title: json['title'] as String? ?? '',
       titleEnglish: json['title_english'] as String?,
       titleJapanese: json['title_japanese'] as String?,
-      titleSynonyms: (json['title_synonyms'] as List?)
-              ?.map((e) => e as String)
-              .toList() ??
+      titleSynonyms:
+          (json['title_synonyms'] as List?)?.map((e) => e as String).toList() ??
           const [],
       type: json['type'] as String?,
       source: json['source'] as String?,
@@ -109,31 +108,38 @@ class JikanAnime {
       broadcast: json['broadcast'] != null
           ? JikanBroadcast.fromJson(json['broadcast'] as Map<String, dynamic>)
           : null,
-      producers: (json['producers'] as List?)
+      producers:
+          (json['producers'] as List?)
               ?.map((e) => JikanProducer.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      licensors: (json['licensors'] as List?)
+      licensors:
+          (json['licensors'] as List?)
               ?.map((e) => JikanProducer.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      studios: (json['studios'] as List?)
+      studios:
+          (json['studios'] as List?)
               ?.map((e) => JikanProducer.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      genres: (json['genres'] as List?)
+      genres:
+          (json['genres'] as List?)
               ?.map((e) => JikanGenre.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      explicitGenres: (json['explicit_genres'] as List?)
+      explicitGenres:
+          (json['explicit_genres'] as List?)
               ?.map((e) => JikanGenre.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      themes: (json['themes'] as List?)
+      themes:
+          (json['themes'] as List?)
               ?.map((e) => JikanGenre.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      demographics: (json['demographics'] as List?)
+      demographics:
+          (json['demographics'] as List?)
               ?.map((e) => JikanGenre.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
@@ -146,9 +152,8 @@ class JikanAnime {
     );
   }
 
-  String get bestTitle => titleEnglish?.isNotEmpty == true
-      ? titleEnglish!
-      : title;
+  String get bestTitle =>
+      titleEnglish?.isNotEmpty == true ? titleEnglish! : title;
 
   String? get posterUrl => images?.jpg?.largeImageUrl ?? images?.jpg?.imageUrl;
 
@@ -245,9 +250,8 @@ class JikanAnimeDetails {
       title: json['title'] as String? ?? '',
       titleEnglish: json['title_english'] as String?,
       titleJapanese: json['title_japanese'] as String?,
-      titleSynonyms: (json['title_synonyms'] as List?)
-              ?.map((e) => e as String)
-              .toList() ??
+      titleSynonyms:
+          (json['title_synonyms'] as List?)?.map((e) => e as String).toList() ??
           const [],
       type: json['type'] as String?,
       source: json['source'] as String?,
@@ -272,31 +276,38 @@ class JikanAnimeDetails {
       broadcast: json['broadcast'] != null
           ? JikanBroadcast.fromJson(json['broadcast'] as Map<String, dynamic>)
           : null,
-      producers: (json['producers'] as List?)
+      producers:
+          (json['producers'] as List?)
               ?.map((e) => JikanProducer.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      licensors: (json['licensors'] as List?)
+      licensors:
+          (json['licensors'] as List?)
               ?.map((e) => JikanProducer.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      studios: (json['studios'] as List?)
+      studios:
+          (json['studios'] as List?)
               ?.map((e) => JikanProducer.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      genres: (json['genres'] as List?)
+      genres:
+          (json['genres'] as List?)
               ?.map((e) => JikanGenre.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      explicitGenres: (json['explicit_genres'] as List?)
+      explicitGenres:
+          (json['explicit_genres'] as List?)
               ?.map((e) => JikanGenre.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      themes: (json['themes'] as List?)
+      themes:
+          (json['themes'] as List?)
               ?.map((e) => JikanGenre.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      demographics: (json['demographics'] as List?)
+      demographics:
+          (json['demographics'] as List?)
               ?.map((e) => JikanGenre.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
@@ -306,18 +317,21 @@ class JikanAnimeDetails {
       trailer: json['trailer'] != null
           ? JikanTrailer.fromJson(json['trailer'] as Map<String, dynamic>)
           : null,
-      relations: (json['relations'] as List?)
+      relations:
+          (json['relations'] as List?)
               ?.map((e) => JikanRelation.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
       theme: json['theme'] != null
           ? JikanTheme.fromJson(json['theme'] as Map<String, dynamic>)
           : const JikanTheme(),
-      external: (json['external'] as List?)
+      external:
+          (json['external'] as List?)
               ?.map((e) => JikanExternal.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      streaming: (json['streaming'] as List?)
+      streaming:
+          (json['streaming'] as List?)
               ?.map((e) => JikanStreaming.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
@@ -338,8 +352,7 @@ class JikanAnimeDetails {
     return _unique(all);
   }
 
-  String? get posterUrl =>
-      images?.jpg?.largeImageUrl ?? images?.jpg?.imageUrl;
+  String? get posterUrl => images?.jpg?.largeImageUrl ?? images?.jpg?.imageUrl;
 
   String? get backgroundUrl =>
       images?.jpg?.largeImageUrl ?? images?.jpg?.imageUrl;
@@ -368,12 +381,7 @@ class JikanAnimeDetails {
 }
 
 class JikanAired {
-  const JikanAired({
-    this.from,
-    this.to,
-    this.prop,
-    this.string,
-  });
+  const JikanAired({this.from, this.to, this.prop, this.string});
 
   final DateTime? from;
   final DateTime? to;
@@ -382,7 +390,9 @@ class JikanAired {
 
   factory JikanAired.fromJson(Map<String, dynamic> json) {
     return JikanAired(
-      from: json['from'] != null ? DateTime.tryParse(json['from'] as String) : null,
+      from: json['from'] != null
+          ? DateTime.tryParse(json['from'] as String)
+          : null,
       to: json['to'] != null ? DateTime.tryParse(json['to'] as String) : null,
       prop: json['prop'] != null
           ? JikanAiredProp.fromJson(json['prop'] as Map<String, dynamic>)
@@ -395,11 +405,7 @@ class JikanAired {
 }
 
 class JikanAiredProp {
-  const JikanAiredProp({
-    this.day,
-    this.month,
-    this.year,
-  });
+  const JikanAiredProp({this.day, this.month, this.year});
 
   final int? day;
   final int? month;
@@ -415,12 +421,7 @@ class JikanAiredProp {
 }
 
 class JikanBroadcast {
-  const JikanBroadcast({
-    this.day,
-    this.time,
-    this.timezone,
-    this.string,
-  });
+  const JikanBroadcast({this.day, this.time, this.timezone, this.string});
 
   final String? day;
   final String? time;
@@ -484,10 +485,7 @@ class JikanGenre {
 }
 
 class JikanImages {
-  const JikanImages({
-    this.jpg,
-    this.webp,
-  });
+  const JikanImages({this.jpg, this.webp});
 
   final JikanImageSet? jpg;
   final JikanImageSet? webp;
@@ -505,11 +503,7 @@ class JikanImages {
 }
 
 class JikanImageSet {
-  const JikanImageSet({
-    this.imageUrl,
-    this.smallImageUrl,
-    this.largeImageUrl,
-  });
+  const JikanImageSet({this.imageUrl, this.smallImageUrl, this.largeImageUrl});
 
   final String? imageUrl;
   final String? smallImageUrl;
@@ -525,12 +519,7 @@ class JikanImageSet {
 }
 
 class JikanTrailer {
-  const JikanTrailer({
-    this.youtubeId,
-    this.url,
-    this.embedUrl,
-    this.images,
-  });
+  const JikanTrailer({this.youtubeId, this.url, this.embedUrl, this.images});
 
   final String? youtubeId;
   final String? url;
@@ -576,10 +565,7 @@ class JikanTrailerImages {
 }
 
 class JikanRelation {
-  const JikanRelation({
-    this.relation,
-    this.entry = const [],
-  });
+  const JikanRelation({this.relation, this.entry = const []});
 
   final String? relation;
   final List<JikanRelationEntry> entry;
@@ -587,8 +573,11 @@ class JikanRelation {
   factory JikanRelation.fromJson(Map<String, dynamic> json) {
     return JikanRelation(
       relation: json['relation'] as String?,
-      entry: (json['entry'] as List?)
-              ?.map((e) => JikanRelationEntry.fromJson(e as Map<String, dynamic>))
+      entry:
+          (json['entry'] as List?)
+              ?.map(
+                (e) => JikanRelationEntry.fromJson(e as Map<String, dynamic>),
+              )
               .toList() ??
           const [],
     );
@@ -596,12 +585,7 @@ class JikanRelation {
 }
 
 class JikanRelationEntry {
-  const JikanRelationEntry({
-    this.malId,
-    this.type,
-    this.name,
-    this.url,
-  });
+  const JikanRelationEntry({this.malId, this.type, this.name, this.url});
 
   final int? malId;
   final String? type;
@@ -619,33 +603,25 @@ class JikanRelationEntry {
 }
 
 class JikanTheme {
-  const JikanTheme({
-    this.openings = const [],
-    this.endings = const [],
-  });
+  const JikanTheme({this.openings = const [], this.endings = const []});
 
   final List<String> openings;
   final List<String> endings;
 
   factory JikanTheme.fromJson(Map<String, dynamic> json) {
     return JikanTheme(
-      openings: (json['openings'] as List?)
-              ?.map((e) => e as String)
-              .toList() ??
+      openings:
+          (json['openings'] as List?)?.map((e) => e as String).toList() ??
           const [],
-      endings: (json['endings'] as List?)
-              ?.map((e) => e as String)
-              .toList() ??
+      endings:
+          (json['endings'] as List?)?.map((e) => e as String).toList() ??
           const [],
     );
   }
 }
 
 class JikanExternal {
-  const JikanExternal({
-    this.name,
-    this.url,
-  });
+  const JikanExternal({this.name, this.url});
 
   final String? name;
   final String? url;
@@ -659,10 +635,7 @@ class JikanExternal {
 }
 
 class JikanStreaming {
-  const JikanStreaming({
-    this.name,
-    this.url,
-  });
+  const JikanStreaming({this.name, this.url});
 
   final String? name;
   final String? url;

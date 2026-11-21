@@ -12,8 +12,7 @@ void main() {
           'english': 'JUJUTSU KAISEN',
           'native': '呪術廻戦',
         },
-        'description':
-            'A boy fights...<br>\n<br>\nHardship &amp; regret.<br><br><br>More.',
+        'description': 'A boy fights...<br>\n<br>\nHardship &amp; regret.<br><br><br>More.',
         'averageScore': 84,
         'seasonYear': 2020,
         'episodes': 24,
@@ -38,7 +37,10 @@ void main() {
       expect(media.id, 113415);
       expect(media.romaji, 'Jujutsu Kaisen');
       expect(media.displayEnglish, 'JUJUTSU KAISEN');
-      expect(media.description, 'a boy fights...\n\nhardship & regret.\n\nmore.');
+      expect(
+        media.description,
+        'a boy fights...\n\nhardship & regret.\n\nmore.',
+      );
       expect(media.score, 8.4);
       expect(media.year, 2020);
       expect(media.episodes, 24);

@@ -9,22 +9,22 @@ import '../../core/models/video_source.dart';
 
 class AnimeVostVideoSource implements VideoSource {
   AnimeVostVideoSource({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: 'https://animevost.org',
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 30),
-                headers: const {
-                  'User-Agent':
-                      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
-                      '(KHTML, like Gecko) Chrome/122.0 Safari/537.36',
-                  'Accept':
-                      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                  'Accept-Language': 'ru,en;q=0.8',
-                },
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: 'https://animevost.org',
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 30),
+              headers: const {
+                'User-Agent':
+                    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                    '(KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ru,en;q=0.8',
+              },
+            ),
+          );
 
   final Dio _dio;
   final Map<String, String?> _streamCache = {};
@@ -174,7 +174,8 @@ class AnimeVostVideoSource implements VideoSource {
       final ogImage = document
           .querySelector('meta[property="og:image"]')
           ?.attributes['content'];
-      final poster = ogImage ?? document.querySelector('img')?.attributes['src'];
+      final poster =
+          ogImage ?? document.querySelector('img')?.attributes['src'];
 
       final description =
           document
@@ -279,13 +280,13 @@ class AnimeVostVideoSource implements VideoSource {
   }
 
   List<String> _extractMp4Urls(String source) {
-    final matches = RegExp(
-      r'''https?://[^\s"'<>]+?\.mp4[^\s"'<>]*''',
-    ).allMatches(source);
+    final matches = RegExp(r'''https?://[^\s"'<>]+?\.mp4[^\s"'<>]*''')
+        .allMatches(source);
     final seen = <String>{};
     final urls = <String>[];
     for (final match in matches) {
-      final value = match.group(0)
+      final value = match
+          .group(0)
           ?.replaceAll('&amp;', '&')
           .replaceAll(r'\u0026', '&');
       if (value != null && value.isNotEmpty && seen.add(value)) urls.add(value);
@@ -294,8 +295,7 @@ class AnimeVostVideoSource implements VideoSource {
   }
 
   String _pickBestUrl(List<String> urls) {
-    bool has(String value, String token) =>
-        value.toLowerCase().contains(token);
+    bool has(String value, String token) => value.toLowerCase().contains(token);
     for (final url in urls) {
       if (has(url, '/1080/') || has(url, '1080p')) return url;
     }
@@ -333,7 +333,7 @@ List<SourceEpisode> parseAnimeVostEpisodes(String html) {
       if (id.isEmpty) continue;
       final ordinal =
           int.tryParse(RegExp(r'\d+').firstMatch(entry.key)?.group(0) ?? '') ??
-              fallbackOrdinal;
+          fallbackOrdinal;
       episodes.add(
         SourceEpisode(
           externalId: id,

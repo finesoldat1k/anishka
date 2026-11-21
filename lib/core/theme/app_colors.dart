@@ -7,11 +7,11 @@ import 'package:flutter/painting.dart';
 /// This keeps the interface calm and makes every colour readable.
 abstract final class AppColors {
   // Warm graphite palette - slightly warmer than pure black
-  static const background = Color(0xFF0A0A0C);
-  static const backgroundLift = Color(0xFF0F0F12);
-  static const surface = Color(0xFF141418);
-  static const surfaceHigh = Color(0xFF1B1B20);
-  static const surfaceSoft = Color(0xFF25252B);
+  static const background = Color(0xFF0B0A09);
+  static const backgroundLift = Color(0xFF12100D);
+  static const surface = Color(0xFF171410);
+  static const surfaceHigh = Color(0xFF1F1B16);
+  static const surfaceSoft = Color(0xFF2B2620);
 
   /// Neutral emphasis (selected tab, focused control, secondary action).
   static const accent = Color(0xFFE4E4E7);
@@ -29,7 +29,7 @@ abstract final class AppColors {
 
   // Semantic action colours.
   static const favorite = Color(0xFFF5C84C); // amber — favourite
-  static const planned = Color(0xFFA855F7);  // purple — plans / bookmarks
+  static const planned = Color(0xFFA855F7); // purple — plans / bookmarks
   static const watching = Color(0xFF6EE7A8); // green — watching
   static const completed = Color(0xFF60A5FA); // blue — completed
   static const trailer = Color(0xFFF87171); // red — trailer / destructive
@@ -45,7 +45,7 @@ abstract final class AppColors {
   );
 
   static const posterGradient = LinearGradient(
-    colors: [Color(0x000A0A0C), Color(0xCC0A0A0C), Color(0xFF0A0A0C)],
+    colors: [Color(0x000B0A09), Color(0xCC0B0A09), Color(0xFF0B0A09)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     stops: [0.35, 0.82, 1],

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'core/storage/library_store.dart';
+import 'core/storage/search_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,6 +12,7 @@ Future<void> main() async {
 
   final preferences = await SharedPreferences.getInstance();
   final library = LibraryStore(preferences);
+  final search = SearchStore(preferences);
 
-  runApp(AnishkaApp(library: library));
+  runApp(AnishkaApp(library: library, search: search));
 }

@@ -13,11 +13,7 @@ import '../../../ui/widgets/skeleton.dart';
 import '../../../ui/widgets/state_views.dart';
 
 class OngoingView extends StatefulWidget {
-  const OngoingView({
-    super.key,
-    required this.onOpen,
-    required this.grid,
-  });
+  const OngoingView({super.key, required this.onOpen, required this.grid});
 
   final void Function(dynamic anime) onOpen;
   final bool grid;

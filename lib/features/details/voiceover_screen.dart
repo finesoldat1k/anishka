@@ -20,11 +20,7 @@ import 'widgets/voice_avatar.dart';
 
 /// First step of playback: pick a studio / voiceover track.
 class VoiceoverScreen extends StatefulWidget {
-  const VoiceoverScreen({
-    super.key,
-    this.animeWithSources,
-    this.shikimoriId,
-  });
+  const VoiceoverScreen({super.key, this.animeWithSources, this.shikimoriId});
 
   /// Usually passed through GoRouter `extra`, so no request is needed.
   final AnimeWithSources? animeWithSources;
@@ -57,10 +53,10 @@ class _VoiceoverScreenState extends State<VoiceoverScreen> {
   }
 
   bool get _shouldLoad =>
-      _anime == null || (_anime!.sources.isEmpty && _anime!.hasEpisodes == false);
+      _anime == null ||
+      (_anime!.sources.isEmpty && _anime!.hasEpisodes == false);
 
-  int? get _animeId =>
-      widget.shikimoriId ?? _anime?.shikimoriAnime.id;
+  int? get _animeId => widget.shikimoriId ?? _anime?.shikimoriAnime.id;
 
   Future<void> _load({bool refresh = false}) async {
     final id = _animeId;
@@ -73,10 +69,7 @@ class _VoiceoverScreenState extends State<VoiceoverScreen> {
       _error = null;
     });
     try {
-      final anime = await _repository.getAnimeWithSources(
-        id,
-        refresh: refresh,
-      );
+      final anime = await _repository.getAnimeWithSources(id, refresh: refresh);
       if (!mounted) return;
       setState(() => _anime = anime);
     } catch (error) {
@@ -141,7 +134,7 @@ class _VoiceoverScreenState extends State<VoiceoverScreen> {
               .reduce((a, b) => a > b ? a : b);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -387,7 +380,8 @@ class _VoiceTile extends StatefulWidget {
   State<_VoiceTile> createState() => _VoiceTileState();
 }
 
-class _VoiceTileState extends State<_VoiceTile> with SingleTickerProviderStateMixin {
+class _VoiceTileState extends State<_VoiceTile>
+    with SingleTickerProviderStateMixin {
   bool _hovered = false;
   bool _pressed = false;
   late final AnimationController _pressController;

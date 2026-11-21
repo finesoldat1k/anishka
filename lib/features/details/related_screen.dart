@@ -9,6 +9,7 @@ import '../../core/models/shikimori_anime.dart';
 import '../../core/repository/anime_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/description.dart';
 import '../../core/utils/errors.dart';
 import '../../core/utils/format.dart';
 import '../../core/utils/layout.dart';
@@ -99,7 +100,7 @@ class _RelatedScreenState extends State<RelatedScreen> {
     final hasItems = _items.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -204,9 +205,11 @@ class _RelatedListTile extends StatefulWidget {
   State<_RelatedListTile> createState() => _RelatedListTileState();
 }
 
-class _RelatedListTileState extends State<_RelatedListTile> with SingleTickerProviderStateMixin {
+class _RelatedListTileState extends State<_RelatedListTile>
+    with SingleTickerProviderStateMixin {
   bool _hovered = false;
   bool _pressed = false;
+  String? _descriptionSnippet;
   late final AnimationController _pressController;
   late final Animation<double> _pressAnimation;
 
@@ -220,6 +223,44 @@ class _RelatedListTileState extends State<_RelatedListTile> with SingleTickerPro
     _pressAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
       CurvedAnimation(parent: _pressController, curve: Curves.easeOutCubic),
     );
+    _loadDescription();
+  }
+
+  void _loadDescription() {
+    final anime = widget.anime;
+    String? description;
+    if (anime is ShikimoriAnimeDetails) {
+      description = anime.descriptionText;
+    } else if (anime is AnimeRelease) {
+      description = anime.displayDescription;
+    }
+    final direct = _cleanDescription(description);
+    if (direct != null) {
+      _descriptionSnippet = direct;
+      return;
+    }
+    if (anime is ShikimoriAnime) {
+      context
+          .read<AnimeRepository>()
+          .getShikimoriDetails(anime.id)
+          .then((details) {
+            if (!mounted) return;
+            final cleaned = _cleanDescription(details.descriptionText);
+            if (cleaned != null) {
+              setState(() => _descriptionSnippet = cleaned);
+            }
+          })
+          .catchError((_) {});
+    }
+  }
+
+  static String? _cleanDescription(String? description) {
+    final cleaned = cleanAnimeDescription(description);
+    if (cleaned.isEmpty) return null;
+    if (cleaned.length > 200) {
+      return '${cleaned.substring(0, 200)}…';
+    }
+    return cleaned;
   }
 
   @override
@@ -254,30 +295,7 @@ class _RelatedListTileState extends State<_RelatedListTile> with SingleTickerPro
     final posterUrl = adapter.posterUrl;
     final displayTitle = adapter.displayTitle;
 
-    // Get description from ShikimoriAnime if available
-    String? description;
-    if (anime is ShikimoriAnimeDetails) {
-      description = anime.descriptionText;
-    } else if (anime is AnimeRelease) {
-      description = anime.displayDescription;
-    }
-
-    // Clean and truncate description to 3 lines
-    String? descriptionSnippet;
-    if (description != null && description.isNotEmpty) {
-      final cleaned = description
-          .replaceAllMapped(
-            RegExp(r'\[/?[a-z]+(?:=[^\]]*)?\]'),
-            (match) => '',
-          )
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-      if (cleaned.length > 200) {
-        descriptionSnippet = '${cleaned.substring(0, 200)}…';
-      } else if (cleaned.isNotEmpty) {
-        descriptionSnippet = cleaned;
-      }
-    }
+    final descriptionSnippet = _descriptionSnippet;
 
     final posterWidth = widget.compact ? 100.0 : 120.0;
     final posterHeight = posterWidth * 1.5;
@@ -303,116 +321,117 @@ class _RelatedListTileState extends State<_RelatedListTile> with SingleTickerPro
             onTapCancel: _handleTapCancel,
             borderRadius: BorderRadius.circular(16),
             child: AnimatedContainer(
-            duration: const Duration(milliseconds: 170),
-            curve: Curves.easeOutCubic,
-            padding: EdgeInsets.all(widget.compact ? 10 : 12),
-            decoration: BoxDecoration(
-              color: _hovered
-                  ? AppColors.surfaceHigh
-                  : AppColors.surface.withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: _hovered ? AppColors.borderStrong : AppColors.border,
+              duration: const Duration(milliseconds: 170),
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.all(widget.compact ? 10 : 12),
+              decoration: BoxDecoration(
+                color: _hovered
+                    ? AppColors.surfaceHigh
+                    : AppColors.surface.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _hovered ? AppColors.borderStrong : AppColors.border,
+                ),
               ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: posterWidth,
-                  height: posterHeight,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: AppImage(
-                      url: posterUrl,
-                      fit: BoxFit.cover,
-                      memCacheWidth: posterWidth.round() * 2,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: posterWidth,
+                    height: posterHeight,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: AppImage(
+                        url: posterUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth: posterWidth.round() * 2,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        displayTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: AppFonts.display,
-                          fontWeight: FontWeight.w500,
-                          fontSize: widget.compact ? 13.5 : 15,
-                          height: 1.25,
-                          letterSpacing: -0.25,
-                          color: AppColors.text,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          displayTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: AppFonts.display,
+                            fontWeight: FontWeight.w500,
+                            fontSize: widget.compact ? 13.5 : 15,
+                            height: 1.25,
+                            letterSpacing: -0.25,
+                            color: AppColors.text,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          if (score != null && score > 0) ...[
-                            const Icon(
-                              AppIcons.star,
-                              size: 13,
-                              color: AppColors.gold,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              formatScore(score),
-                              style: const TextStyle(
-                                fontFamily: AppFonts.body,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textSoft,
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            if (score != null && score > 0) ...[
+                              const Icon(
+                                AppIcons.star,
+                                size: 13,
+                                color: AppColors.gold,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                formatScore(score),
+                                style: const TextStyle(
+                                  fontFamily: AppFonts.body,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textSoft,
+                                ),
+                              ),
+                              const SizedBox(width: 9),
+                            ],
+                            Expanded(
+                              child: Text(
+                                [
+                                  if (year != null) '$year',
+                                  if (episodeCount != null && episodeCount > 0)
+                                    '$episodeCount сер.',
+                                  if (statusLabel.isNotEmpty) statusLabel,
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: AppFonts.body,
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 9),
                           ],
-                          Expanded(
-                            child: Text(
-                              [
-                                if (year != null) '$year',
-                                if (episodeCount != null && episodeCount > 0)
-                                  '$episodeCount сер.',
-                                if (statusLabel.isNotEmpty) statusLabel,
-                              ].join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: AppFonts.body,
-                                fontSize: 11,
-                                color: AppColors.textMuted,
-                              ),
+                        ),
+                        if (descriptionSnippet != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            descriptionSnippet,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: AppFonts.body,
+                              fontSize: widget.compact ? 11.5 : 12.5,
+                              height: 1.5,
+                              color: AppColors.textSoft.withValues(alpha: 0.85),
                             ),
                           ),
                         ],
-                      ),
-                      if (descriptionSnippet != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          descriptionSnippet,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: AppFonts.body,
-                            fontSize: widget.compact ? 11.5 : 12.5,
-                            height: 1.5,
-                            color: AppColors.textSoft.withValues(alpha: 0.85),
-                          ),
-                        ),
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Icon(
-                  AppIcons.caretRight,
-                  size: 20,
-                  color: AppColors.textFaint,
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Icon(
+                    AppIcons.caretRight,
+                    size: 20,
+                    color: AppColors.textFaint,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

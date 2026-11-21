@@ -17,9 +17,7 @@ void main() {
         'studios': [
           {'id': 1, 'name': 'MAPPA'},
         ],
-      }).copyWith(
-        metadataStudios: const ['MAPPA', 'Studio Ghibli'],
-      );
+      }).copyWith(metadataStudios: const ['MAPPA', 'Studio Ghibli']);
 
       expect(anime.allStudios, ['mappa', 'Studio Ghibli']);
     });
@@ -37,11 +35,8 @@ void main() {
     });
 
     test('falls back to metadata genres when shikimori has none', () {
-      final anime = details({
-        'genres': <Map<String, dynamic>>[],
-      }).copyWith(
-        metadataGenres: const ['Action', 'action', 'Supernatural'],
-      );
+      final anime = details({'genres': <Map<String, dynamic>>[]})
+          .copyWith(metadataGenres: const ['Action', 'action', 'Supernatural']);
 
       expect(anime.allGenres, ['Action', 'Supernatural']);
     });

@@ -15,44 +15,14 @@ class SourceNote extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: padding,
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 5,
-                height: 5,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.planned,
-                ),
-              ),
-              const SizedBox(width: 7),
-              const Flexible(
-                child: Text(
-                  'данные — shikimori, anilist и kitsu · видео — anilibria, animevost и anidub',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: AppFonts.body,
-                    fontSize: 10.5,
-                    color: AppColors.textFaint,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          const Text(
-            'все права на аниме принадлежат правообладателям',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: AppFonts.body,
-              fontSize: 10,
-              color: AppColors.textFaint,
-            ),
-          ),
-        ],
+      child: const Text(
+        'все права на аниме принадлежат правообладателям.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: AppFonts.body,
+          fontSize: 10.5,
+          color: AppColors.textFaint,
+        ),
       ),
     );
   }

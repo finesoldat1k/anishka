@@ -63,7 +63,8 @@ extension ShikimoriAnimeCardItem on ShikimoriAnime {
 
   int? get cardYear => year;
 
-  int? get cardEpisodeCount => episodes > 0 ? episodes : (episodesAired > 0 ? episodesAired : null);
+  int? get cardEpisodeCount =>
+      episodes > 0 ? episodes : (episodesAired > 0 ? episodesAired : null);
 
   String? get cardAgeRating => null;
 
@@ -90,7 +91,8 @@ extension ShikimoriAnimeDetailsCardItem on ShikimoriAnimeDetails {
 
   int? get cardYear => year;
 
-  int? get cardEpisodeCount => episodes > 0 ? episodes : (episodesAired > 0 ? episodesAired : null);
+  int? get cardEpisodeCount =>
+      episodes > 0 ? episodes : (episodesAired > 0 ? episodesAired : null);
 
   String? get cardAgeRating => rating;
 

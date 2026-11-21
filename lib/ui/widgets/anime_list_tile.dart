@@ -12,11 +12,7 @@ import 'skeleton.dart';
 
 /// Compact, scannable list rendering of anime entries.
 class SliverAnimeList extends StatelessWidget {
-  const SliverAnimeList({
-    super.key,
-    required this.items,
-    required this.onTap,
-  });
+  const SliverAnimeList({super.key, required this.items, required this.onTap});
 
   final List<dynamic> items;
   final void Function(dynamic anime) onTap;
@@ -28,10 +24,7 @@ class SliverAnimeList extends StatelessWidget {
       separatorBuilder: (context, index) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final anime = items[index];
-        return AnimeListTile(
-          anime: anime,
-          onTap: () => onTap(anime),
-        );
+        return AnimeListTile(anime: anime, onTap: () => onTap(anime));
       },
     );
   }

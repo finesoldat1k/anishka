@@ -41,18 +41,22 @@ class KitsuMedia {
   final String? status;
 
   factory KitsuMedia.fromJson(Map<String, dynamic> json) {
-    final attributes = (json['attributes'] as Map<String, dynamic>?) ?? const {};
+    final attributes =
+        (json['attributes'] as Map<String, dynamic>?) ?? const {};
     final titles = (attributes['titles'] as Map<String, dynamic>?) ?? const {};
-    final poster = (attributes['posterImage'] as Map<String, dynamic>?) ?? const {};
-    final cover = (attributes['coverImage'] as Map<String, dynamic>?) ?? const {};
-    final rating = double.tryParse(attributes['averageRating']?.toString() ?? '');
+    final poster =
+        (attributes['posterImage'] as Map<String, dynamic>?) ?? const {};
+    final cover =
+        (attributes['coverImage'] as Map<String, dynamic>?) ?? const {};
+    final rating = double.tryParse(
+      attributes['averageRating']?.toString() ?? '',
+    );
     final startDate = attributes['startDate']?.toString();
 
     return KitsuMedia(
       id: json['id']?.toString() ?? '',
       canonicalTitle: attributes['canonicalTitle'] as String?,
-      englishTitle:
-          (titles['en'] as String?) ?? (titles['en_us'] as String?),
+      englishTitle: (titles['en'] as String?) ?? (titles['en_us'] as String?),
       japaneseTitle: titles['ja_jp'] as String?,
       synopsis: attributes['synopsis'] as String?,
       posterUrl:
@@ -73,17 +77,16 @@ class KitsuMedia {
 
 class KitsuApi {
   KitsuApi({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: 'https://kitsu.io/api/edge',
-                connectTimeout: const Duration(seconds: 12),
-                receiveTimeout: const Duration(seconds: 18),
-                headers: const {
-                  'Accept': 'application/vnd.api+json',
-                },
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: 'https://kitsu.io/api/edge',
+              connectTimeout: const Duration(seconds: 12),
+              receiveTimeout: const Duration(seconds: 18),
+              headers: const {'Accept': 'application/vnd.api+json'},
+            ),
+          );
 
   final Dio _dio;
   final Map<String, KitsuMedia?> _cache = {};
@@ -98,10 +101,7 @@ class KitsuApi {
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '/anime',
-        queryParameters: {
-          'filter[text]': query,
-          'page[limit]': 5,
-        },
+        queryParameters: {'filter[text]': query, 'page[limit]': 5},
       );
       final data = response.data?['data'];
       KitsuMedia? result;

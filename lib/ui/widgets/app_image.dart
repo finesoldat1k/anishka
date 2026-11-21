@@ -138,7 +138,10 @@ class _ImageFallback extends StatelessWidget {
   String? get _initial {
     final value = label?.trim();
     if (value == null || value.isEmpty) return null;
-    final match = RegExp(r'[a-zа-я0-9]', caseSensitive: false).firstMatch(value);
+    final match = RegExp(
+      r'[a-zа-я0-9]',
+      caseSensitive: false,
+    ).firstMatch(value);
     return match?.group(0)?.toUpperCase();
   }
 

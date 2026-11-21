@@ -85,7 +85,10 @@ class AniLibriaApi {
 
   /// Find releases by Shikimori anime ID.
   /// Searches by name and filters exact matches by shikimori.id.
-  Future<List<AnimeRelease>> findByShikimoriId(int shikimoriId, {String? nameHint}) async {
+  Future<List<AnimeRelease>> findByShikimoriId(
+    int shikimoriId, {
+    String? nameHint,
+  }) async {
     final results = <AnimeRelease>[];
     final searched = <String>{};
 
@@ -93,7 +96,10 @@ class AniLibriaApi {
     if (nameHint != null && nameHint.isNotEmpty) {
       final hint = nameHint.trim();
       if (searched.add(hint)) {
-        final data = await _get('/anime/catalog/releases', query: {'f[search]': hint, 'limit': 50});
+        final data = await _get(
+          '/anime/catalog/releases',
+          query: {'f[search]': hint, 'limit': 50},
+        );
         final items = asMapList(asMap(data)['data'])
             .map(AnimeRelease.fromJson)
             .where((r) => r.id > 0 && r.shikimoriId == shikimoriId)

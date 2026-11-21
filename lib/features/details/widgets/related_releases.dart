@@ -1,8 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_theme.dart'
-    show AppFonts;
+import '../../../core/theme/app_theme.dart' show AppFonts;
 import '../../../core/utils/format.dart';
 import '../../../ui/icons/app_icons.dart';
 import '../../../ui/widgets/anime_card.dart';

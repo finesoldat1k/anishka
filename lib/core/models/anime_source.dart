@@ -42,7 +42,8 @@ class AnimeSource {
   List<AnimeEpisode> get episodes => release.episodes;
 
   /// Find episode by ordinal
-  AnimeEpisode? episodeByOrdinal(int ordinal) => release.episodeByOrdinal(ordinal);
+  AnimeEpisode? episodeByOrdinal(int ordinal) =>
+      release.episodeByOrdinal(ordinal);
 
   /// Get HLS URL for episode at quality
   String? hlsForEpisode(int ordinal, String quality) {
@@ -58,7 +59,8 @@ class AnimeSource {
       if (ep.hls720 != null) qualities.add('720');
       if (ep.hls480 != null) qualities.add('480');
     }
-    return qualities.toList()..sort((a, b) => int.parse(b).compareTo(int.parse(a)));
+    return qualities.toList()
+      ..sort((a, b) => int.parse(b).compareTo(int.parse(a)));
   }
 }
 

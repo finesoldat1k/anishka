@@ -26,8 +26,7 @@ void main() {
     });
 
     test('falls back to insertion order when titles have no numbers', () {
-      const html =
-          'var data = {"серия":"111","фильм":"222",};';
+      const html = 'var data = {"серия":"111","фильм":"222",};';
 
       final episodes = parseAnimeVostEpisodes(html);
 

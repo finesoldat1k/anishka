@@ -1,7 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'trailer_view_stub.dart'
-    if (dart.library.html) 'trailer_view_web.dart' as impl;
+    if (dart.library.io) 'trailer_view_io.dart'
+    if (dart.library.html) 'trailer_view_web.dart'
+    as impl;
 
 /// Встроенный трейлер с youtube.
 ///
@@ -11,11 +13,7 @@ import 'trailer_view_stub.dart'
 /// На нативных платформах возвращает пустой виджет: там трейлер
 /// открывается в браузере.
 class TrailerView extends StatelessWidget {
-  const TrailerView({
-    super.key,
-    required this.youtubeId,
-    this.ambient = true,
-  });
+  const TrailerView({super.key, required this.youtubeId, this.ambient = true});
 
   final String youtubeId;
   final bool ambient;

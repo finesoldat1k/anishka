@@ -12,18 +12,19 @@ class KodikVideoSource implements VideoSource {
     Dio? dio,
     required this.token,
     this.baseUrl = 'https://kodik.info/api',
-  }) : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: baseUrl,
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 30),
-                headers: {
-                  'User-Agent': 'anishka/1.0',
-                  'Accept': 'application/json',
-                },
-              ),
-            );
+  }) : _dio =
+           dio ??
+           Dio(
+             BaseOptions(
+               baseUrl: baseUrl,
+               connectTimeout: const Duration(seconds: 15),
+               receiveTimeout: const Duration(seconds: 30),
+               headers: {
+                 'User-Agent': 'anishka/1.0',
+                 'Accept': 'application/json',
+               },
+             ),
+           );
 
   final Dio _dio;
   final String token;
@@ -73,21 +74,25 @@ class KodikVideoSource implements VideoSource {
   List<SourceAnimeEntry> _parseSearchResults(dynamic data, int limit) {
     final results = <SourceAnimeEntry>[];
     try {
-      final list = data is List ? data : (data as Map?)?['results'] as List? ?? [];
+      final list = data is List
+          ? data
+          : (data as Map?)?['results'] as List? ?? [];
       for (final item in list.take(limit)) {
         final map = item as Map<String, dynamic>;
-        results.add(SourceAnimeEntry(
-          sourceId: sourceId,
-          externalId: map['id']?.toString() ?? '',
-          title: map['title_orig'] ?? map['title'] ?? '',
-          russianTitle: map['title'] ?? map['title_orig'],
-          posterUrl: map['poster'] ?? map['poster_url'],
-          year: map['year'],
-          kind: map['type']?.toString().toLowerCase(),
-          status: map['status'],
-          episodes: map['episodes_count'] ?? map['episodes'],
-          score: map['rating']?.toString(),
-        ));
+        results.add(
+          SourceAnimeEntry(
+            sourceId: sourceId,
+            externalId: map['id']?.toString() ?? '',
+            title: map['title_orig'] ?? map['title'] ?? '',
+            russianTitle: map['title'] ?? map['title_orig'],
+            posterUrl: map['poster'] ?? map['poster_url'],
+            year: map['year'],
+            kind: map['type']?.toString().toLowerCase(),
+            status: map['status'],
+            episodes: map['episodes_count'] ?? map['episodes'],
+            score: map['rating']?.toString(),
+          ),
+        );
       }
     } catch (_) {}
     return results;
@@ -117,8 +122,7 @@ class KodikVideoSource implements VideoSource {
     final episodes = <SourceEpisode>[];
     final episodesData = map['episodes'] as List?;
     final topTranslation = map['translation'];
-    final topTranslationMap =
-        topTranslation is Map ? topTranslation : null;
+    final topTranslationMap = topTranslation is Map ? topTranslation : null;
     if (episodesData != null) {
       for (final ep in episodesData) {
         final epMap = ep as Map<String, dynamic>;
@@ -136,14 +140,16 @@ class KodikVideoSource implements VideoSource {
         final translation = epMap['translation'] is Map
             ? epMap['translation'] as Map
             : topTranslationMap;
-        episodes.add(SourceEpisode(
-          externalId: epMap['id']?.toString() ?? '',
-          ordinal: epMap['episode'] ?? 0,
-          title: epMap['title'] as String?,
-          hlsUrls: hlsUrls,
-          voiceId: translation?['id']?.toString(),
-          voiceTitle: translation?['name']?.toString(),
-        ));
+        episodes.add(
+          SourceEpisode(
+            externalId: epMap['id']?.toString() ?? '',
+            ordinal: epMap['episode'] ?? 0,
+            title: epMap['title'] as String?,
+            hlsUrls: hlsUrls,
+            voiceId: translation?['id']?.toString(),
+            voiceTitle: translation?['name']?.toString(),
+          ),
+        );
       }
     }
 

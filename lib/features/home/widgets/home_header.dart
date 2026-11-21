@@ -87,11 +87,7 @@ class HomeHeader extends StatelessWidget {
               child: const SizedBox(
                 width: 48,
                 height: 48,
-                child: Icon(
-                  AppIcons.info,
-                  size: 20,
-                  color: AppColors.textSoft,
-                ),
+                child: Icon(AppIcons.info, size: 20, color: AppColors.textSoft),
               ),
             ),
           ),

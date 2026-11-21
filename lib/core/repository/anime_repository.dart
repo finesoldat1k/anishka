@@ -643,7 +643,10 @@ class AnimeRepository {
           anilist?.trailerSite ??
           (trailerUrl?.contains('youtu') == true ? 'youtube' : null),
       metadataPoster:
-          anilist?.posterUrl ?? kitsu?.posterUrl ?? jikan?.posterUrl ?? yaniPoster,
+          anilist?.posterUrl ??
+          kitsu?.posterUrl ??
+          jikan?.posterUrl ??
+          yaniPoster,
       metadataBackground:
           anilist?.bannerUrl ??
           kitsu?.coverUrl ??
@@ -652,7 +655,8 @@ class AnimeRepository {
           yaniPoster,
       metadataScore: anilist?.score ?? kitsu?.score ?? jikan?.score,
       metadataYear: anilist?.year ?? kitsu?.year ?? jikan?.year,
-      metadataEpisodes: anilist?.episodes ?? kitsu?.episodes ?? jikan?.episodeCount,
+      metadataEpisodes:
+          anilist?.episodes ?? kitsu?.episodes ?? jikan?.episodeCount,
       metadataDuration: anilist?.duration ?? kitsu?.episodeLength,
       metadataDescription: _preferredDescription(
         anilist?.description,

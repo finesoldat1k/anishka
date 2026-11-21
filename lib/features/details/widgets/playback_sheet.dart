@@ -81,7 +81,10 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
     super.initState();
     if (_isNewFlow) {
       _sources = widget.animeWithSources!.sources;
-      _source = widget.initialSource ?? widget.animeWithSources!.defaultSource ?? _sources.first;
+      _source =
+          widget.initialSource ??
+          widget.animeWithSources!.defaultSource ??
+          _sources.first;
       _voices = _voiceOptions();
       _voice = _voiceById(_voices, widget.initialVoice) ?? _source.voiceover;
       _episode = _findInitialEpisode();
@@ -134,7 +137,8 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
         }
       }
       next ??= _firstPlayable(source.episodes);
-      _episode = next ?? (source.episodes.isEmpty ? null : source.episodes.first);
+      _episode =
+          next ?? (source.episodes.isEmpty ? null : source.episodes.first);
     });
   }
 
@@ -174,9 +178,9 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
     final episode = _episode;
     if (episode == null || !episode.hasStream) return;
     if (_isNewFlow) {
-      Navigator.of(
-        context,
-      ).pop(PlaybackSelection(episode: episode, voice: _voice, source: _source));
+      Navigator.of(context).pop(
+        PlaybackSelection(episode: episode, voice: _voice, source: _source),
+      );
       return;
     }
     final release = widget.release!;
@@ -339,7 +343,9 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
                             ),
                             const SizedBox(height: 5),
                             Text(
-                              isNewFlow ? _source.voiceCastLabel : widget.release!.primaryMeta,
+                              isNewFlow
+                                  ? _source.voiceCastLabel
+                                  : widget.release!.primaryMeta,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -357,14 +363,14 @@ class _PlaybackSheetState extends State<_PlaybackSheet> {
                   if (isNewFlow && _sources.length > 1) ...[
                     _SourceSummary(
                       count: _sources.length,
-                      labels: _sources.map((s) => s.sourceType).toSet().toList(),
+                      labels: _sources
+                          .map((s) => s.sourceType)
+                          .toSet()
+                          .toList(),
                     ),
                     const SizedBox(height: 14),
                   ],
-                  const _SheetLabel(
-                    icon: AppIcons.waveform,
-                    label: 'озвучка',
-                  ),
+                  const _SheetLabel(icon: AppIcons.waveform, label: 'озвучка'),
                   const SizedBox(height: 10),
                   if (_voices.isEmpty)
                     const _NoVoices()
@@ -580,11 +586,7 @@ class _SourceSummary extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(
-            AppIcons.plugs,
-            size: 15,
-            color: AppColors.accentBright,
-          ),
+          const Icon(AppIcons.plugs, size: 15, color: AppColors.accentBright),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

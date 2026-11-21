@@ -65,9 +65,8 @@ class _HomeTabsState extends State<HomeTabs> {
 
         final content = compact
             ? ScrollConfiguration(
-                behavior: ScrollConfiguration.of(
-                  context,
-                ).copyWith(scrollbars: false),
+                behavior: ScrollConfiguration.of(context)
+                    .copyWith(scrollbars: false),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   physics: const BouncingScrollPhysics(),
@@ -149,9 +148,7 @@ class _TabButtonState extends State<_TabButton> {
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
             height: 40,
-            padding: EdgeInsets.symmetric(
-              horizontal: widget.compact ? 13 : 10,
-            ),
+            padding: EdgeInsets.symmetric(horizontal: widget.compact ? 13 : 10),
             decoration: BoxDecoration(
               gradient: selected
                   ? LinearGradient(
@@ -194,9 +191,7 @@ class _TabButtonState extends State<_TabButton> {
                       fontFamily: AppFonts.body,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                       fontSize: widget.compact ? 12.5 : 12,
-                      color: selected
-                          ? AppColors.text
-                          : AppColors.textSoft,
+                      color: selected ? AppColors.text : AppColors.textSoft,
                     ),
                   ),
                 ),

@@ -69,8 +69,7 @@ class AniLibriaVoiceover implements VoiceoverInfo {
   int get episodeCount => episodes;
 
   /// Access to original ReleaseMember for AniLibria-specific data.
-  ReleaseMember? get releaseMember =>
-      members.isEmpty ? null : members.first;
+  ReleaseMember? get releaseMember => members.isEmpty ? null : members.first;
 }
 
 /// Generic voiceover for other sources (AnimeVost, AniDub, Kodik, etc.)
@@ -109,7 +108,9 @@ class GenericVoiceover implements VoiceoverInfo {
 
 /// Legacy compatibility: AnimeVoiceover used by the in-player quick picker.
 /// @deprecated Use VoiceoverInfo implementations instead.
-@Deprecated('Use VoiceoverInfo implementations (AniLibriaVoiceover, GenericVoiceover) instead')
+@Deprecated(
+  'Use VoiceoverInfo implementations (AniLibriaVoiceover, GenericVoiceover) instead',
+)
 class AnimeVoiceover implements VoiceoverInfo {
   const AnimeVoiceover({
     required this.id,
@@ -144,12 +145,8 @@ class AnimeVoiceover implements VoiceoverInfo {
 
   String get displayName => title;
 
-  static AnimeVoiceover empty() => const AnimeVoiceover(
-    id: '',
-    title: '',
-    subtitle: '',
-    source: '',
-  );
+  static AnimeVoiceover empty() =>
+      const AnimeVoiceover(id: '', title: '', subtitle: '', source: '');
 }
 
 /// Legacy compatibility constants and functions.
@@ -164,7 +161,9 @@ List<AnimeVoiceover> voiceoversFor(AnimeRelease release) {
     AnimeVoiceover(
       id: defaultVoiceoverId,
       title: 'anilibria',
-      subtitle: cast == 'русская озвучка' ? 'озвучка студии' : 'озвучка студии · $cast',
+      subtitle: cast == 'русская озвучка'
+          ? 'озвучка студии'
+          : 'озвучка студии · $cast',
       source: 'anilibria',
       logoUrl: 'https://anilibria.top/favicon.ico',
       participants: release.voiceActors

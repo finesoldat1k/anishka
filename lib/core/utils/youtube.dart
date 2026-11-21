@@ -10,7 +10,8 @@ String? youtubeVideoId(String url) {
   if (uri.host.contains('youtu.be')) {
     return uri.pathSegments.isEmpty ? null : uri.pathSegments.first;
   }
-  if (uri.host.contains('youtube.com') || uri.host.contains('youtube-nocookie.com')) {
+  if (uri.host.contains('youtube.com') ||
+      uri.host.contains('youtube-nocookie.com')) {
     final fromQuery = uri.queryParameters['v'];
     if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
     final segments = uri.pathSegments;
