@@ -6,7 +6,7 @@ import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/shikimori_anime.dart';
-import '../../core/repository/anime_repository.dart';
+import '../../core/services/app_services.dart';
 import '../../core/storage/search_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -133,7 +133,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _run(String query, int token) async {
-    final repository = context.read<AnimeRepository>();
+    final repository = context.read<AppServices>().repository;
     try {
       final results = await repository.searchShikimori(query);
       if (!mounted || token != _request) return;
@@ -301,6 +301,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 decoration: const InputDecoration(
                   isDense: true,
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
                   hintText: 'название аниме',
                   hintStyle: TextStyle(
                     fontFamily: AppFonts.body,

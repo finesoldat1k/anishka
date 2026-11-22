@@ -1,5 +1,4 @@
-import 'package:anishka/core/api/anilist_api.dart';
-import 'package:anishka/core/api/kitsu_api.dart';
+import 'package:anishka/core/api/metadata/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

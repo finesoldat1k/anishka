@@ -267,108 +267,82 @@ class _StillsGalleryState extends State<StillsGallery> {
 
     return SizedBox(
       height: height,
-      child: ClipRect(
-        child: Stack(
-          children: [
-            // Right fade shadow for items that don't fit
-            Positioned(
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: 44,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerRight,
-                      end: Alignment.centerLeft,
-                      colors: [
-                        AppColors.background,
-                        AppColors.background.withValues(alpha: 0),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: widget.stills.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final url = widget.stills[index];
+          final isHovered = _hoveredIndex == index;
+          final isPressed = _pressedIndex == index;
+
+          return MouseRegion(
+            onEnter: (_) => setState(() => _hoveredIndex = index),
+            onExit: (_) => setState(() => _hoveredIndex = null),
+            child: GestureDetector(
+              onTapDown: (_) => setState(() => _pressedIndex = index),
+              onTapUp: (_) {
+                setState(() => _pressedIndex = null);
+                _openViewer(context, index);
+              },
+              onTapCancel: () => setState(() => _pressedIndex = null),
+              child: AnimatedScale(
+                scale: isPressed ? 0.96 : (isHovered ? 1.06 : 1.0),
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  width: width + (isHovered ? 24 : 0),
+                  margin: EdgeInsets.symmetric(horizontal: isHovered ? 6 : 0),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: AppImage(
+                            url: url,
+                            fit: BoxFit.cover,
+                            memCacheWidth: 900,
+                          ),
+                        ),
+                        const DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.all(
+                              Radius.circular(12),
+                            ),
+                            border: Border.fromBorderSide(
+                              BorderSide(color: Color(0x1FFFFFFF)),
+                            ),
+                          ),
+                        ),
+                        if (isHovered)
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.3),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
                 ),
               ),
             ),
-            ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: widget.stills.length,
-              separatorBuilder: (context, index) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final url = widget.stills[index];
-                final isHovered = _hoveredIndex == index;
-                final isPressed = _pressedIndex == index;
-
-                return MouseRegion(
-                  onEnter: (_) => setState(() => _hoveredIndex = index),
-                  onExit: (_) => setState(() => _hoveredIndex = null),
-                  child: GestureDetector(
-                    onTapDown: (_) => setState(() => _pressedIndex = index),
-                    onTapUp: (_) {
-                      setState(() => _pressedIndex = null);
-                      _openViewer(context, index);
-                    },
-                    onTapCancel: () => setState(() => _pressedIndex = null),
-                    child: AnimatedScale(
-                      scale: isPressed ? 0.96 : (isHovered ? 1.04 : 1.0),
-                      duration: const Duration(milliseconds: 160),
-                      curve: Curves.easeOutCubic,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOutCubic,
-                        width: width + (isHovered ? 16 : 0),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: AppImage(
-                                  url: url,
-                                  fit: BoxFit.cover,
-                                  memCacheWidth: 900,
-                                ),
-                              ),
-                              const DecoratedBox(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.all(
-                                    Radius.circular(12),
-                                  ),
-                                  border: Border.fromBorderSide(
-                                    BorderSide(color: Color(0x1FFFFFFF)),
-                                  ),
-                                ),
-                              ),
-                              if (isHovered)
-                                Positioned.fill(
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(12),
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Colors.transparent,
-                                          Colors.black.withValues(alpha: 0.3),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

@@ -8,7 +8,12 @@ import '../../core/storage/library_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/layout.dart';
+import '../../ui/widgets/anime_card.dart';
+import '../../ui/widgets/anime_list_tile.dart';
+import '../../ui/widgets/section_header.dart';
+import '../../ui/widgets/state_views.dart';
 import '../../ui/widgets/view_toggle.dart';
+import '../../ui/widgets/skeleton.dart';
 import 'home_tab.dart';
 import 'widgets/home_header.dart';
 import 'widgets/home_tabs.dart';
@@ -33,11 +38,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openAnime(dynamic anime) {
     if (anime is AnimeRelease) {
-      // Negative ids are local Shikimori snapshots (see LibraryStore).
-      if (anime.id < 0) {
-        context.push('/anime/shikimori/${-anime.id}');
-      } else {
-        context.push('/anime/${anime.id}');
+      final id = anime.shikimoriId;
+      if (id != null && id > 0) {
+        context.push('/anime/shikimori/$id');
       }
     } else if (anime is ShikimoriAnime) {
       context.push('/anime/shikimori/${anime.id}', extra: anime);
@@ -60,42 +63,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final content = switch (_tab) {
       HomeTab.airing => OngoingView(
-        key: const ValueKey('airing'),
-        onOpen: _openAnime,
-        grid: _mode == AnimeViewMode.grid,
-      ),
+          key: const ValueKey('airing'),
+          onOpen: _openAnime,
+          grid: _mode == AnimeViewMode.grid,
+        ),
       HomeTab.favorites => LibraryView(
-        key: const ValueKey('favorites'),
-        tab: HomeTab.favorites,
-        entries: library.favorites(),
-        onOpen: _openAnime,
-        onBrowse: () => _selectTab(HomeTab.airing),
-        grid: _mode == AnimeViewMode.grid,
-      ),
+          key: const ValueKey('favorites'),
+          tab: HomeTab.favorites,
+          entries: library.favorites(),
+          onOpen: _openAnime,
+          onBrowse: () => _selectTab(HomeTab.airing),
+          grid: _mode == AnimeViewMode.grid,
+        ),
       HomeTab.watching => LibraryView(
-        key: const ValueKey('watching'),
-        tab: HomeTab.watching,
-        entries: library.byStatus(CollectionStatus.watching),
-        onOpen: _openAnime,
-        onBrowse: () => _selectTab(HomeTab.airing),
-        grid: _mode == AnimeViewMode.grid,
-      ),
+          key: const ValueKey('watching'),
+          tab: HomeTab.watching,
+          entries: library.byStatus(CollectionStatus.watching),
+          onOpen: _openAnime,
+          onBrowse: () => _selectTab(HomeTab.airing),
+          grid: _mode == AnimeViewMode.grid,
+        ),
       HomeTab.planned => LibraryView(
-        key: const ValueKey('planned'),
-        tab: HomeTab.planned,
-        entries: library.byStatus(CollectionStatus.planned),
-        onOpen: _openAnime,
-        onBrowse: () => _selectTab(HomeTab.airing),
-        grid: _mode == AnimeViewMode.grid,
-      ),
+          key: const ValueKey('planned'),
+          tab: HomeTab.planned,
+          entries: library.byStatus(CollectionStatus.planned),
+          onOpen: _openAnime,
+          onBrowse: () => _selectTab(HomeTab.airing),
+          grid: _mode == AnimeViewMode.grid,
+        ),
       HomeTab.completed => LibraryView(
-        key: const ValueKey('completed'),
-        tab: HomeTab.completed,
-        entries: library.byStatus(CollectionStatus.completed),
-        onOpen: _openAnime,
-        onBrowse: () => _selectTab(HomeTab.airing),
-        grid: _mode == AnimeViewMode.grid,
-      ),
+          key: const ValueKey('completed'),
+          tab: HomeTab.completed,
+          entries: library.byStatus(CollectionStatus.completed),
+          onOpen: _openAnime,
+          onBrowse: () => _selectTab(HomeTab.airing),
+          grid: _mode == AnimeViewMode.grid,
+        ),
     };
 
     final viewToggle = ViewToggle(
@@ -112,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 Padding(
-                  padding: EdgeInsets.fromLTRB(padding, 16, padding, 12),
+                  padding: EdgeInsets.fromLTRB(padding, 16, padding, 10),
                   child: HomeHeader(
                     compact: compact,
                     onSearchTap: () => context.push('/search'),
@@ -130,10 +133,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               onSelected: _selectTab,
                               counts: counts,
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
                             Row(
                               children: [
-                                const SizedBox(width: 2),
                                 const Text(
                                   'вид',
                                   style: TextStyle(
@@ -162,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: padding),

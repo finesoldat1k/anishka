@@ -5,36 +5,41 @@ import 'package:material_ui/material_ui.dart';
 import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/models/anime_franchise.dart';
+import '../../core/models/anime_episode.dart';
 import '../../core/models/anime_release.dart';
 import '../../core/models/anime_source.dart';
 import '../../core/models/shikimori_anime.dart';
-import '../../core/repository/anime_repository.dart';
+import '../../core/repository/unified_repository.dart';
+import '../../core/services/app_services.dart';
 import '../../core/storage/library_store.dart';
 import '../../core/storage/search_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/errors.dart';
 import '../../core/utils/layout.dart';
+import '../../ui/widgets/anime_card.dart';
+import '../../ui/widgets/anime_list_tile.dart';
+import '../../ui/widgets/app_image.dart';
+import '../../ui/widgets/gradient_button.dart';
 import '../../ui/widgets/skeleton.dart';
 import '../../ui/widgets/source_note.dart';
 import '../../ui/widgets/state_views.dart';
-import 'widgets/details_body.dart';
 import 'widgets/details_hero.dart';
+import 'widgets/details_body.dart';
+import 'widgets/subpage_header.dart';
 import 'widgets/playback_sheet.dart';
 import 'widgets/related_releases.dart';
+import 'widgets/trailer_section.dart';
 import 'related_screen.dart';
 
 class DetailsScreen extends StatefulWidget {
   const DetailsScreen({
     super.key,
-    this.releaseId,
-    this.shikimoriId,
+    required this.shikimoriId,
     this.preview,
   });
 
-  final int? releaseId;
-  final int? shikimoriId;
+  final int shikimoriId;
 
   /// Compact search/home result used for instant first paint.
   final ShikimoriAnime? preview;
@@ -44,38 +49,30 @@ class DetailsScreen extends StatefulWidget {
 }
 
 class _DetailsScreenState extends State<DetailsScreen> {
-  late final AnimeRepository _repository;
-  AnimeWithSources? _animeWithSources;
-  AnimeRelease? _release; // For legacy AniLibria-only flow
-  List<dynamic> _related = const [];
+  late final UnifiedRepository _repository;
+  AnimeWithSources? _anime;
   bool _loading = true;
-  bool _fullDataLoaded =
-      false; // Track when full data (stills, related) is ready
+  bool _fullDataLoaded = false;
   bool _refreshing = false;
-  bool _visitedSaved = false;
   String? _error;
+  bool _visitedSaved = false;
 
   @override
   void initState() {
     super.initState();
-    _repository = context.read<AnimeRepository>();
+    _repository = context.read<AppServices>().repository;
     final preview = widget.preview;
-    final shikimoriId = widget.shikimoriId;
-    if (shikimoriId != null) {
-      final cached = _repository.cachedAnimeWithSources(shikimoriId);
-      if (cached != null) {
-        _animeWithSources = cached;
-        _release = cached.defaultSource?.release;
-        _related = cached.related;
-        _loading = false;
-      } else if (preview != null) {
-        _animeWithSources = AnimeWithSources(
-          shikimoriAnime: preview.toDetailsPreview(),
-          sources: const [],
-          related: const [],
-        );
-        _loading = false;
-      }
+    final cached = _repository.cachedAnimeWithSources(widget.shikimoriId);
+    if (cached != null) {
+      _anime = cached;
+      _loading = false;
+    } else if (preview != null) {
+      _anime = AnimeWithSources(
+        shikimoriAnime: preview.toDetailsPreview(),
+        sources: const [],
+        related: const [],
+      );
+      _loading = false;
     }
     _load();
   }
@@ -83,7 +80,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
   Future<void> _load({bool refresh = false}) async {
     if (refresh) {
       setState(() => _refreshing = true);
-    } else if (_animeWithSources == null && _release == null) {
+    } else if (_anime == null) {
       setState(() {
         _loading = true;
         _error = null;
@@ -91,33 +88,30 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
 
     try {
-      final shikimoriId = widget.shikimoriId;
-      if (shikimoriId != null) {
-        await _loadShikimori(shikimoriId, refresh: refresh);
-      } else if (widget.releaseId != null) {
-        // Legacy AniLibria-only flow
-        final releaseFuture = _repository.release(
-          widget.releaseId!,
-          refresh: refresh,
-        );
-        final franchiseFuture = _repository
-            .franchises(widget.releaseId!, refresh: refresh)
-            .catchError((Object _) => <AnimeFranchise>[]);
+      // Stage 1: base Shikimori details — instant first paint on cold load.
+      final titleHint = widget.preview?.displayTitle;
+      final base = await _repository.getShikimoriDetails(
+        widget.shikimoriId,
+        titleHint: titleHint,
+      );
+      if (!mounted) return;
+      _applyBase(base);
 
-        final release = await releaseFuture;
-        final franchises = await franchiseFuture;
-        if (!mounted) return;
-        context.read<LibraryStore>().syncSnapshot(release);
-        _rememberVisited(release);
-        setState(() {
-          _release = release;
-          _related = relatedReleasesFor(franchises, release.id);
-          _error = null;
-        });
-      }
+      // Stage 2: full data — enrichment + sources + related in parallel.
+      final results = await Future.wait([
+        _repository.getAnimeDetails(widget.shikimoriId, refresh: refresh),
+        _repository.getAnimeWithSources(
+          widget.shikimoriId,
+          refresh: refresh,
+        ),
+      ]);
+      if (!mounted) return;
+      final enriched = results[0] as ShikimoriAnimeDetails;
+      final full = results[1] as AnimeWithSources;
+      _applyFull(enriched, full);
     } catch (error) {
       if (!mounted) return;
-      if (_animeWithSources == null && _release == null) {
+      if (_anime == null) {
         setState(() => _error = userMessage(error));
       } else {
         ScaffoldMessenger.of(context)
@@ -133,72 +127,32 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
   }
 
-  /// Three-stage load: preview -> base Shikimori -> enriched metadata ->
-  /// full source list. Every stage paints as soon as it is ready.
-  Future<void> _loadShikimori(int id, {required bool refresh}) async {
-    if (!refresh) {
-      final cached = _repository.cachedAnimeWithSources(id);
-      if (cached != null) {
-        _applyFull(cached);
-        return;
-      }
-    }
-
-    final detailsFuture = _repository.getAnimeDetails(id, refresh: refresh);
-    final sourcesFuture = _repository.getAnimeWithSources(id, refresh: refresh);
-
-    // Base response removes the skeleton even on a cold deep link.
-    try {
-      final base = await _repository.getShikimoriDetails(id);
-      if (!mounted) return;
-      _applyDetails(base);
-    } catch (_) {
-      // The futures below carry the user-visible error.
-    }
-
-    try {
-      final details = await detailsFuture;
-      if (!mounted) return;
-      _applyDetails(details);
-    } catch (_) {
-      // Sources may still be usable; the full load reports hard failures.
-    }
-
-    final anime = await sourcesFuture;
-    if (!mounted) return;
-    _applyFull(anime);
-  }
-
-  void _applyDetails(ShikimoriAnimeDetails details) {
+  void _applyBase(ShikimoriAnimeDetails details) {
     _rememberVisited(details);
-    final current = _animeWithSources;
     setState(() {
-      _animeWithSources = AnimeWithSources(
+      _anime = AnimeWithSources(
         shikimoriAnime: details,
-        sources: current?.sources ?? const [],
-        related: current?.related ?? const [],
+        sources: const [],
+        related: const [],
       );
       _loading = false;
-      _fullDataLoaded = false; // Full data not ready yet
+      _fullDataLoaded = false;
       _error = null;
     });
   }
 
-  void _applyFull(AnimeWithSources anime) {
-    _rememberVisited(anime.shikimoriAnime);
-    final defaultSource = anime.defaultSource;
+  void _applyFull(ShikimoriAnimeDetails details, AnimeWithSources full) {
+    _rememberVisited(details);
+    final defaultSource = full.defaultSource;
     final library = context.read<LibraryStore>();
     if (defaultSource != null) {
-      // Move favourite/status from the temporary Shikimori snapshot to the
-      // real playable release.
-      library.adoptEntry(-anime.shikimoriAnime.id, defaultSource.release);
+      // Move favourite/status from temporary snapshot to real playable release.
+      library.adoptEntry(-details.id, defaultSource.release);
       library.syncSnapshot(defaultSource.release);
     }
     setState(() {
-      _animeWithSources = anime;
-      _release = defaultSource?.release;
-      _related = anime.related;
-      _fullDataLoaded = true; // Full data now ready
+      _anime = full;
+      _fullDataLoaded = true;
       _error = null;
     });
   }
@@ -209,10 +163,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
     context.read<SearchStore>().addVisited(anime);
   }
 
-  /// Temporary library item so favourite/status buttons work before sources
-  /// have finished loading.
   AnimeRelease? get _librarySnapshot {
-    final anime = _animeWithSources;
+    final anime = _anime;
     if (anime == null) return null;
     return anime.defaultSource?.release ??
         AnimeRelease.fromShikimoriDetails(anime.shikimoriAnime);
@@ -226,8 +178,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
   }
 
-  Future<void> _playFromSources() async {
-    final anime = _animeWithSources;
+  void _playFromSources() {
+    final anime = _anime;
     if (anime == null) return;
     context.push(
       '/anime/shikimori/${anime.shikimoriAnime.id}/voices',
@@ -235,34 +187,30 @@ class _DetailsScreenState extends State<DetailsScreen> {
     );
   }
 
-  Future<void> _playLegacy() async {
-    final library = context.read<LibraryStore>();
-    final release = _release;
-    if (release == null) return;
-
-    final selection = await showPlaybackSheet(
-      context,
-      release: release,
-      initialEpisode: library.lastEpisodeFor(release.id),
-      initialVoice: library.voiceFor(release.id),
-    );
-    if (!mounted || selection == null) return;
-    library.saveProgress(
-      releaseId: release.id,
-      episode: selection.episode.ordinal,
-      voice: selection.voice.id,
-    );
-    context.push(
-      '/watch/${release.id}/${selection.episode.ordinal}?voice=${selection.voice.id}',
-      extra: selection.source,
-    );
+  void _openRelated(dynamic anime) {
+    if (anime is ShikimoriAnime) {
+      context.push('/anime/shikimori/${anime.id}', extra: anime);
+    }
   }
 
-  void _openRelated(dynamic anime) {
-    if (anime is AnimeRelease) {
-      context.push('/anime/${anime.id}');
-    } else if (anime is ShikimoriAnime) {
-      context.push('/anime/shikimori/${anime.id}', extra: anime);
+  void _toggleFavorite() {
+    final release = _librarySnapshot;
+    if (release != null) {
+      context.read<LibraryStore>().toggleFavorite(release);
+    }
+  }
+
+  void _selectStatus(CollectionStatus status) {
+    final release = _librarySnapshot;
+    if (release != null) {
+      context.read<LibraryStore>().setStatus(release, status);
+    }
+  }
+
+  void _removeStatus() {
+    final release = _librarySnapshot;
+    if (release != null) {
+      context.read<LibraryStore>().setStatus(release, null);
     }
   }
 
@@ -273,18 +221,19 @@ class _DetailsScreenState extends State<DetailsScreen> {
     final compact = width < 760;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          if (_loading && _animeWithSources == null && _release == null)
+          if (_loading && _anime == null)
             const _DetailsSkeleton()
-          else if (_error != null &&
-              _animeWithSources == null &&
-              _release == null)
+          else if (_error != null && _anime == null)
             Center(
-              child: ErrorState(message: _error!, onRetry: () => _load()),
+              child: ErrorState(
+                message: _error!,
+                onRetry: () => _load(refresh: true),
+              ),
             )
-          else if (_animeWithSources != null)
+          else if (_anime != null)
             RefreshIndicator(
               onRefresh: () => _load(refresh: true),
               color: AppColors.accentBright,
@@ -295,32 +244,14 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 ),
                 slivers: [
                   SliverToBoxAdapter(
-                    child: DetailsHero.sources(
-                      animeWithSources: _animeWithSources!,
+                    child: DetailsHero(
+                      anime: _anime!,
                       librarySnapshot: _librarySnapshot,
                       compact: compact,
                       onPlay: _playFromSources,
-                      onToggleFavorite: () {
-                        final release = _librarySnapshot;
-                        if (release != null) {
-                          context.read<LibraryStore>().toggleFavorite(release);
-                        }
-                      },
-                      onSelectStatus: (status) {
-                        final release = _librarySnapshot;
-                        if (release != null) {
-                          context.read<LibraryStore>().setStatus(
-                            release,
-                            status,
-                          );
-                        }
-                      },
-                      onRemoveStatus: () {
-                        final release = _librarySnapshot;
-                        if (release != null) {
-                          context.read<LibraryStore>().setStatus(release, null);
-                        }
-                      },
+                      onToggleFavorite: _toggleFavorite,
+                      onSelectStatus: _selectStatus,
+                      onRemoveStatus: _removeStatus,
                     ),
                   ),
                   SliverToBoxAdapter(
@@ -329,17 +260,16 @@ class _DetailsScreenState extends State<DetailsScreen> {
                         constraints: const BoxConstraints(maxWidth: 1280),
                         child: Padding(
                           padding: EdgeInsets.fromLTRB(padding, 28, padding, 0),
-                          child: DetailsBody.sources(
-                            animeWithSources: _animeWithSources!,
+                          child: DetailsBody(
+                            anime: _anime!,
                             compact: compact,
                             loadingStills: !_fullDataLoaded,
-                            loadingRelated: !_fullDataLoaded,
                           ),
                         ),
                       ),
                     ),
                   ),
-                  if (_related.isNotEmpty || !_fullDataLoaded)
+                  if (_anime!.related.isNotEmpty || !_fullDataLoaded)
                     SliverToBoxAdapter(
                       child: Center(
                         child: ConstrainedBox(
@@ -351,26 +281,47 @@ class _DetailsScreenState extends State<DetailsScreen> {
                               padding,
                               0,
                             ),
-                            child: RelatedReleases(
-                              items: _related,
+child: RelatedReleases(
+                              items: _anime!.related,
                               onOpen: _openRelated,
                               onViewAll: () => context.push(
-                                '/anime/shikimori/${_animeWithSources!.shikimoriAnime.id}/related',
+                                '/anime/shikimori/${widget.shikimoriId}/related',
                                 extra: RelatedArgs(
-                                  items: _related,
-                                  title: _animeWithSources!.displayTitle,
+                                  items: _anime!.related,
+                                  title: _anime!.displayTitle,
                                 ),
                               ),
                               compact: compact,
-                              shikimoriId: _animeWithSources!.shikimoriAnime.id,
-                              title: _animeWithSources!.displayTitle,
+                              shikimoriId: widget.shikimoriId,
+                              title: _anime!.displayTitle,
                               loading: !_fullDataLoaded,
                             ),
                           ),
                         ),
                       ),
                     ),
-                  SliverToBoxAdapter(
+                    // Trailer section below related releases
+                    if (_anime!.shikimoriAnime.trailerYoutubeId != null &&
+                        _anime!.shikimoriAnime.trailerYoutubeId!.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1280),
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(padding, 16, padding, 0),
+                              child: TrailerSection(
+                                trailerYoutubeId:
+                                    _anime!.shikimoriAnime.trailerYoutubeId,
+                                trailerThumbnail:
+                                    _anime!.shikimoriAnime.trailerThumbnail,
+                                trailerTitle: _anime!.displayTitle,
+                                compact: compact,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    SliverToBoxAdapter(
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 1280),
@@ -381,98 +332,13 @@ class _DetailsScreenState extends State<DetailsScreen> {
                       ),
                     ),
                   ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
                 ],
               ),
             )
-          else if (_release != null)
-            RefreshIndicator(
-              onRefresh: () => _load(refresh: true),
-              color: AppColors.accentBright,
-              backgroundColor: AppColors.surfaceHigh,
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                ),
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: DetailsHero.legacy(
-                      release: _release!,
-                      compact: compact,
-                      onPlay: _playLegacy,
-                      onToggleFavorite: () => context
-                          .read<LibraryStore>()
-                          .toggleFavorite(_release!),
-                      onSelectStatus: (status) => context
-                          .read<LibraryStore>()
-                          .setStatus(_release!, status),
-                      onRemoveStatus: () => context
-                          .read<LibraryStore>()
-                          .setStatus(_release!, null),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1280),
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(padding, 28, padding, 0),
-                          child: DetailsBody.legacy(
-                            release: _release!,
-                            compact: compact,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1280),
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(padding, 24, padding, 0),
-                          child: RelatedReleases(
-                            items: _related,
-                            onOpen: _openRelated,
-                            onViewAll: () {
-                              final id =
-                                  _release?.shikimoriId ??
-                                  (_related.isNotEmpty &&
-                                          _related.first is ShikimoriAnime
-                                      ? (_related.first as ShikimoriAnime).id
-                                      : 0);
-                              if (id <= 0) return;
-                              context.push(
-                                '/anime/shikimori/$id/related',
-                                extra: RelatedArgs(
-                                  items: _related,
-                                  title: _release?.displayTitle,
-                                ),
-                              );
-                            },
-                            compact: compact,
-                            shikimoriId: _release?.shikimoriId,
-                            title: _release?.displayTitle,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1280),
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: padding),
-                          child: const SourceNote(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 20)),
-                ],
-              ),
-            ),
+          else
+            const SizedBox.shrink(),
+
           Positioned(
             left: compact ? 14 : 22,
             top: 0,
@@ -574,43 +440,46 @@ class _DetailsSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 760;
-    return SingleChildScrollView(
-      physics: const NeverScrollableScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SkeletonBox(height: compact ? 460 : 490, borderRadius: 0),
-          Padding(
-            padding: EdgeInsets.all(compact ? 18 : 44),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SkeletonBox(
-                  width: compact ? 112 : 218,
-                  height: compact ? 168 : 327,
-                  borderRadius: 18,
-                ),
-                const SizedBox(width: 28),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SkeletonBox(width: 120, height: 20),
-                      SizedBox(height: 14),
-                      SkeletonBox(height: 12, borderRadius: 5),
-                      SizedBox(height: 8),
-                      SkeletonBox(height: 12, borderRadius: 5),
-                      SizedBox(height: 8),
-                      SkeletonBox(width: 320, height: 12, borderRadius: 5),
-                      SizedBox(height: 24),
-                      SkeletonBox(width: 200, height: 32, borderRadius: 999),
-                    ],
+    return ColoredBox(
+      color: AppColors.background,
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SkeletonBox(height: compact ? 460 : 490, borderRadius: 0),
+            Padding(
+              padding: EdgeInsets.all(compact ? 18 : 44),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SkeletonBox(
+                    width: compact ? 112 : 218,
+                    height: compact ? 168 : 327,
+                    borderRadius: 18,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 28),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonBox(width: 120, height: 20),
+                        SizedBox(height: 14),
+                        SkeletonBox(height: 12, borderRadius: 5),
+                        SizedBox(height: 8),
+                        SkeletonBox(height: 12, borderRadius: 5),
+                        SizedBox(height: 8),
+                        SkeletonBox(width: 320, height: 12, borderRadius: 5),
+                        SizedBox(height: 24),
+                        SkeletonBox(width: 200, height: 32, borderRadius: 999),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -6,7 +6,8 @@ import 'package:provider/provider.dart';
 import '../../core/models/anime_card_item.dart';
 import '../../core/models/anime_release.dart';
 import '../../core/models/shikimori_anime.dart';
-import '../../core/repository/anime_repository.dart';
+import '../../core/repository/unified_repository.dart';
+import '../../core/services/app_services.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/description.dart';
@@ -39,7 +40,7 @@ class RelatedScreen extends StatefulWidget {
 }
 
 class _RelatedScreenState extends State<RelatedScreen> {
-  late final AnimeRepository _repository;
+  late final UnifiedRepository _repository;
   List<dynamic> _items = const [];
   bool _loading = false;
   String? _error;
@@ -48,7 +49,7 @@ class _RelatedScreenState extends State<RelatedScreen> {
   @override
   void initState() {
     super.initState();
-    _repository = context.read<AnimeRepository>();
+    _repository = context.read<AppServices>().repository;
     _items = widget.items ?? const [];
     _animeTitle = widget.title;
     if (_items.isEmpty && widget.shikimoriId != null) _load();
@@ -241,7 +242,8 @@ class _RelatedListTileState extends State<_RelatedListTile>
     }
     if (anime is ShikimoriAnime) {
       context
-          .read<AnimeRepository>()
+          .read<AppServices>()
+          .repository
           .getShikimoriDetails(anime.id)
           .then((details) {
             if (!mounted) return;

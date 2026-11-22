@@ -19,63 +19,36 @@ import '../../../ui/widgets/trailer_view.dart';
 /// Poster and title sit on top of it near the top of the page, so the first
 /// screen already feels like a film rather than a catalogue card.
 class DetailsHero extends StatelessWidget {
-  /// Legacy AniLibria-only constructor.
-  const DetailsHero.legacy({
+  const DetailsHero({
     super.key,
-    required this.release,
+    required this.anime,
+    required this.librarySnapshot,
     required this.compact,
     required this.onPlay,
     required this.onToggleFavorite,
     required this.onSelectStatus,
     required this.onRemoveStatus,
-  }) : animeWithSources = null,
-       librarySnapshot = null,
-       _legacy = true;
+  });
 
-  /// New Shikimori-based constructor with multiple sources.
-  const DetailsHero.sources({
-    super.key,
-    required this.animeWithSources,
-    required this.compact,
-    required this.onPlay,
-    required this.onToggleFavorite,
-    required this.onSelectStatus,
-    required this.onRemoveStatus,
-    this.librarySnapshot,
-  }) : release = null,
-       _legacy = false;
-
-  final AnimeRelease? release;
-  final AnimeWithSources? animeWithSources;
-
-  /// Temporary library snapshot used before the first playable source loads,
-  /// so favourite/status controls work immediately.
+  final AnimeWithSources anime;
   final AnimeRelease? librarySnapshot;
   final bool compact;
   final VoidCallback onPlay;
   final VoidCallback onToggleFavorite;
   final ValueChanged<CollectionStatus> onSelectStatus;
   final VoidCallback onRemoveStatus;
-  final bool _legacy;
 
-  AnimeRelease? get _primaryRelease => _legacy
-      ? release
-      : (animeWithSources?.defaultSource?.release ?? librarySnapshot);
+  AnimeRelease? get _primaryRelease =>
+      anime.defaultSource?.release ?? librarySnapshot;
 
-  ShikimoriAnimeDetails? get _shikimoriAnime =>
-      animeWithSources?.shikimoriAnime;
+  ShikimoriAnimeDetails get _shikimoriAnime => anime.shikimoriAnime;
 
   bool get _hasEpisodes {
-    if (_legacy) return release?.episodes.isNotEmpty ?? false;
-    final anime = animeWithSources;
-    if (anime == null) return false;
     if (anime.sources.isNotEmpty) return anime.hasEpisodes;
     // Sources are still loading. Keep play enabled for everything that is
     // not an announced title; the voices page will finish loading them.
-    return anime.shikimoriAnime.status != 'anons';
+    return _shikimoriAnime.status != 'anons';
   }
-
-  bool get _isBlocked => _legacy ? (release?.isBlocked ?? false) : false;
 
   @override
   Widget build(BuildContext context) {
@@ -92,34 +65,22 @@ class DetailsHero extends StatelessWidget {
         : null;
 
     final shikimori = _shikimoriAnime;
-    final displayTitle = _legacy
-        ? (release?.displayTitle ?? '')
-        : (shikimori?.displayTitle ?? '');
-    final english = _legacy ? release?.displayEnglish : shikimori?.englishTitle;
-    final statusLabel = _legacy
-        ? (release?.statusLabel ?? '')
-        : (shikimori?.statusLabel ?? '');
-    final kindLabel = _legacy
-        ? (release?.type ?? '')
-        : (shikimori?.kindLabel ?? '');
-    final score = _legacy ? release?.score : shikimori?.scoreValue;
-    final year = _legacy ? release?.year : shikimori?.year;
-    final episodeCount = _legacy
-        ? release?.episodeCount
-        : shikimori?.episodeCount;
-    final ageRating = _legacy ? release?.ageRating : shikimori?.rating;
-    final poster = _legacy
-        ? release?.posterUrl
-        : (shikimori?.posterOriginalUrl ?? shikimori?.posterUrl);
-    final background = _legacy
-        ? release?.backgroundUrl
-        : (shikimori?.backgroundUrl ?? shikimori?.metadataBackground);
-    final trailerId = _legacy ? null : shikimori?.trailerYoutubeId;
+    final displayTitle = shikimori.displayTitle;
+    final english = shikimori.englishTitle;
+    final statusLabel = shikimori.statusLabel;
+    final kindLabel = shikimori.kindLabel;
+    final score = shikimori.scoreValue;
+    final year = shikimori.year;
+    final episodeCount = shikimori.episodeCount;
+    final ageRating = shikimori.rating;
+    final poster = shikimori.posterOriginalUrl ?? shikimori.posterUrl;
+    final background = shikimori.backgroundUrl ?? shikimori.metadataBackground;
 
     final meta = <String>[
       if (year != null) '$year',
       if (kindLabel.isNotEmpty) kindLabel,
-      if (episodeCount != null && episodeCount > 0) episodesLabel(episodeCount),
+      if (episodeCount != null && episodeCount > 0)
+        episodesLabel(episodeCount),
       if (score != null) formatScore(score),
       if (ageRating != null && ageRating.isNotEmpty) ageRating,
     ].join('  ·  ');
@@ -129,7 +90,7 @@ class DetailsHero extends StatelessWidget {
       icon: AppIcons.play,
       primary: true,
       expand: compact,
-      onTap: _hasEpisodes && !_isBlocked ? onPlay : null,
+      onTap: _hasEpisodes ? onPlay : null,
       height: 49,
       tone: GradientButtonTone.play,
     );
@@ -175,9 +136,7 @@ class DetailsHero extends StatelessWidget {
             ],
           );
 
-    final note = _isBlocked
-        ? 'релиз недоступен в вашем регионе по требованию правообладателя'
-        : !_hasEpisodes
+    final note = !_hasEpisodes
         ? 'серии ещё не вышли — загляните позже'
         : progress != null
         ? 'вы остановились на ${progress.episode} серии'
@@ -187,64 +146,40 @@ class DetailsHero extends StatelessWidget {
     final posterWidth = compact ? 106.0 : 196.0;
     final gap = compact ? 16.0 : 28.0;
 
-    // Use trailer as background if available, otherwise use poster/background
-    final hasTrailer = trailerId != null;
-
     return SizedBox(
       height: height,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Background layer: trailer (ambient) or poster/background image
-          if (hasTrailer)
-            Positioned.fill(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Poster fallback keeps the hero alive on platforms where
-                  // the embed is unavailable or still loading.
-                  if (background != null && background.isNotEmpty)
-                    AppImage(
-                      url: background,
-                      alignment: Alignment.topCenter,
-                      memCacheWidth: 1900,
-                    )
-                  else if (poster != null && poster.isNotEmpty)
-                    AppImage(
-                      url: poster,
-                      alignment: Alignment.topCenter,
-                      memCacheWidth: 1200,
-                    )
-                  else
-                    const ColoredBox(color: AppColors.backgroundLift),
-                  IgnorePointer(
-                    child: TrailerView(youtubeId: trailerId, ambient: true),
-                  ),
-                ],
-              ),
-            )
-          else if (background != null && background.isNotEmpty)
+          // Background image with immediate purple tint
+          if (background != null && background.isNotEmpty)
             AppImage(
               url: background,
               alignment: Alignment.topCenter,
               memCacheWidth: 1900,
             )
+          else if (poster != null && poster.isNotEmpty)
+            AppImage(
+              url: poster,
+              alignment: Alignment.topCenter,
+              memCacheWidth: 1200,
+            )
           else
             const ColoredBox(color: AppColors.backgroundLift),
 
-          // Scrim gradients for legibility
+          // Warm graphite gradient (matches app theme, no pink/purple flash)
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color(0x7A000000),
-                  Color(0x33000000),
-                  Color(0xE60B0A09),
-                  AppColors.background,
+                  Color(0x880B0A09), // background with 53% opacity
+                  Color(0xAA12100D), // backgroundLift with 67% opacity
+                  Color(0xCC171410), // surface with 80% opacity
+                  Color(0xFF1F1B16), // surfaceHigh solid at bottom
                 ],
-                stops: [0, 0.34, 0.8, 1],
+                stops: [0, 0.3, 0.7, 1],
               ),
             ),
           ),
@@ -253,7 +188,7 @@ class DetailsHero extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
-                colors: [Color(0xB30B0A09), Color(0x000B0A09)],
+                colors: [Color(0x99171410), Color(0x00171410)],
                 stops: [0, 0.62],
               ),
             ),
@@ -293,9 +228,7 @@ class DetailsHero extends StatelessWidget {
                                 _StatusLine(
                                   status: statusLabel,
                                   kind: kindLabel,
-                                  ongoing: _legacy
-                                      ? (release?.isOngoing ?? false)
-                                      : (shikimori?.isOngoing ?? false),
+                                  ongoing: shikimori.isOngoing,
                                 ),
                               SizedBox(height: compact ? 8 : 12),
                               Text(
@@ -360,9 +293,7 @@ class DetailsHero extends StatelessWidget {
                                   style: TextStyle(
                                     fontFamily: AppFonts.body,
                                     fontSize: 11,
-                                    color: _isBlocked
-                                        ? AppColors.danger
-                                        : AppColors.textMuted,
+                                    color: AppColors.textMuted,
                                   ),
                                 ),
                               ],

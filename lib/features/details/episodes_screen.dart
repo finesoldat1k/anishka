@@ -6,7 +6,8 @@ import 'package:provider/provider.dart';
 import '../../core/models/anime_episode.dart';
 import '../../core/models/anime_source.dart';
 import '../../core/models/voiceover.dart';
-import '../../core/repository/anime_repository.dart';
+import '../../core/repository/unified_repository.dart';
+import '../../core/services/app_services.dart';
 import '../../core/storage/library_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -41,7 +42,7 @@ class EpisodesScreen extends StatefulWidget {
 }
 
 class _EpisodesScreenState extends State<EpisodesScreen> {
-  late final AnimeRepository _repository;
+  late final UnifiedRepository _repository;
   AnimeWithSources? _anime;
   bool _loading = false;
   String? _error;
@@ -49,7 +50,7 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
   @override
   void initState() {
     super.initState();
-    _repository = context.read<AnimeRepository>();
+    _repository = context.read<AppServices>().repository;
     _anime = widget.animeWithSources;
     if (_anime == null) _load();
   }
@@ -332,8 +333,7 @@ class _EpisodeRow extends StatefulWidget {
   State<_EpisodeRow> createState() => _EpisodeRowState();
 }
 
-/// Episode row whose still fades in as a full-bleed background on hover,
-/// with the title and metadata sitting on top of the frame.
+/// Episode row without preview still, clean and performant.
 class _EpisodeRowState extends State<_EpisodeRow>
     with SingleTickerProviderStateMixin {
   bool _hovered = false;
@@ -380,10 +380,7 @@ class _EpisodeRowState extends State<_EpisodeRow>
   Widget build(BuildContext context) {
     final episode = widget.episode;
     final enabled = widget.onTap != null;
-    final preview = episode.previewUrl;
-    final hasPreview = preview != null && preview.isNotEmpty;
-    final showStill = hasPreview && (_hovered || widget.compact);
-    final currentTone = AppColors.watching;
+    final currentTone = AppColors.planned;
 
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
@@ -421,204 +418,142 @@ class _EpisodeRowState extends State<_EpisodeRow>
                   color: widget.current
                       ? currentTone.withValues(alpha: 0.38)
                       : _hovered
-                      ? AppColors.watching.withValues(alpha: 0.32)
+                      ? AppColors.planned.withValues(alpha: 0.32)
                       : AppColors.border,
                 ),
               ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (hasPreview)
-                    AnimatedOpacity(
-                      opacity: showStill
-                          ? (_hovered
-                                ? 0.95
-                                : widget.compact
-                                ? 0.55
-                                : 0)
-                          : 0,
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOutCubic,
-                      child: AnimatedScale(
-                        scale: _hovered ? 1.035 : 1,
-                        duration: const Duration(milliseconds: 380),
-                        curve: Curves.easeOutCubic,
-                        child: AppImage(
-                          url: preview,
-                          fit: BoxFit.cover,
-                          alignment: Alignment.center,
-                          memCacheWidth: 900,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.compact ? 12 : 16,
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: widget.compact ? 32 : 42,
+                      child: Text(
+                        episode.ordinal.toString().padLeft(2, '0'),
+                        style: TextStyle(
+                          fontFamily: AppFonts.display,
+                          fontWeight: FontWeight.w600,
+                          fontSize: widget.compact ? 14 : 16,
+                          letterSpacing: -0.4,
+                          color: widget.current
+                              ? currentTone
+                              : _hovered
+                              ? AppColors.text
+                              : AppColors.textMuted,
                         ),
                       ),
                     ),
-                  if (hasPreview)
-                    AnimatedOpacity(
-                      opacity: showStill ? 1 : 0,
-                      duration: const Duration(milliseconds: 240),
-                      child: const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [
-                              Color(0xF209090B),
-                              Color(0xC409090B),
-                              Color(0x7309090B),
-                              Color(0x2E09090B),
-                            ],
-                            stops: [0, 0.42, 0.78, 1],
-                          ),
-                        ),
-                      ),
-                    ),
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: widget.compact ? 12 : 16,
-                    ),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: widget.compact ? 32 : 42,
-                          child: Text(
-                            episode.ordinal.toString().padLeft(2, '0'),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            episode.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontFamily: AppFonts.display,
-                              fontWeight: FontWeight.w600,
-                              fontSize: widget.compact ? 14 : 16,
-                              letterSpacing: -0.4,
-                              color: widget.current
-                                  ? currentTone
-                                  : showStill
-                                  ? Colors.white.withValues(alpha: 0.92)
-                                  : _hovered
-                                  ? AppColors.text
-                                  : AppColors.textMuted,
+                              fontWeight: FontWeight.w500,
+                              fontSize: widget.compact ? 12.5 : 14,
+                              letterSpacing: -0.2,
+                              color: !enabled
+                                  ? AppColors.textFaint
+                                  : AppColors.text,
                             ),
                           ),
-                        ),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
+                          const SizedBox(height: 4),
+                          Row(
                             children: [
                               Text(
-                                episode.displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: AppFonts.display,
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: widget.compact ? 12.5 : 14,
-                                  letterSpacing: -0.2,
-                                  color: !enabled
-                                      ? AppColors.textFaint
-                                      : showStill
-                                      ? Colors.white
-                                      : AppColors.text,
+                                'серия ${episode.ordinal}',
+                                style: const TextStyle(
+                                  fontFamily: AppFonts.body,
+                                  fontSize: 10.5,
+                                  color: AppColors.textFaint,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Text(
-                                    'серия ${episode.ordinal}',
-                                    style: TextStyle(
-                                      fontFamily: AppFonts.body,
-                                      fontSize: 10.5,
-                                      color: showStill
-                                          ? Colors.white.withValues(alpha: 0.68)
-                                          : AppColors.textFaint,
-                                    ),
+                              if (episode.duration != null) ...[
+                                const SizedBox(width: 6),
+                                const Text(
+                                  '·',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: AppColors.textFaint,
                                   ),
-                                  if (episode.duration != null) ...[
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '·',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: showStill
-                                            ? Colors.white.withValues(
-                                                alpha: 0.4,
-                                              )
-                                            : AppColors.textFaint,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      formatDuration(episode.duration!),
-                                      style: TextStyle(
-                                        fontFamily: AppFonts.body,
-                                        fontSize: 10.5,
-                                        color: showStill
-                                            ? Colors.white.withValues(
-                                                alpha: 0.68,
-                                              )
-                                            : AppColors.textFaint,
-                                      ),
-                                    ),
-                                  ],
-                                  if (widget.current) ...[
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'продолжить',
-                                      style: TextStyle(
-                                        fontFamily: AppFonts.body,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 10,
-                                        color: currentTone,
-                                      ),
-                                    ),
-                                  ],
-                                  if (!enabled) ...[
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'недоступно',
-                                      style: TextStyle(
-                                        fontFamily: AppFonts.body,
-                                        fontSize: 10,
-                                        color: AppColors.textFaint,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  formatDuration(episode.duration!),
+                                  style: const TextStyle(
+                                    fontFamily: AppFonts.body,
+                                    fontSize: 10.5,
+                                    color: AppColors.textFaint,
+                                  ),
+                                ),
+                              ],
+                              if (widget.current) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  'продолжить',
+                                  style: TextStyle(
+                                    fontFamily: AppFonts.body,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 10,
+                                    color: currentTone,
+                                  ),
+                                ),
+                              ],
+                              if (!enabled) ...[
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'недоступно',
+                                  style: TextStyle(
+                                    fontFamily: AppFonts.body,
+                                    fontSize: 10,
+                                    color: AppColors.textFaint,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        AnimatedOpacity(
-                          opacity: enabled && _hovered ? 1 : 0.72,
-                          duration: const Duration(milliseconds: 170),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 170),
-                            width: widget.compact ? 32 : 36,
-                            height: widget.compact ? 32 : 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: enabled && _hovered
-                                  ? AppColors.watching.withValues(alpha: 0.22)
-                                  : Colors.white.withValues(alpha: 0.08),
-                              border: Border.all(
-                                color: enabled && _hovered
-                                    ? AppColors.watching.withValues(alpha: 0.6)
-                                    : Colors.white.withValues(alpha: 0.16),
-                              ),
-                            ),
-                            child: Icon(
-                              AppIcons.play,
-                              size: widget.compact ? 17 : 19,
-                              color: enabled
-                                  ? (_hovered
-                                        ? AppColors.watching
-                                        : AppColors.textSoft)
-                                  : AppColors.textFaint,
-                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    AnimatedOpacity(
+                      opacity: enabled && _hovered ? 1 : 0.72,
+                      duration: const Duration(milliseconds: 170),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 170),
+                        width: widget.compact ? 32 : 36,
+                        height: widget.compact ? 32 : 36,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: enabled && _hovered
+                              ? AppColors.planned.withValues(alpha: 0.22)
+                              : Colors.white.withValues(alpha: 0.08),
+                          border: Border.all(
+                            color: enabled && _hovered
+                                ? AppColors.planned.withValues(alpha: 0.6)
+                                : Colors.white.withValues(alpha: 0.16),
                           ),
                         ),
-                      ],
+                        child: Icon(
+                          AppIcons.play,
+                          size: widget.compact ? 17 : 19,
+                          color: enabled
+                              ? (_hovered
+                                  ? AppColors.planned
+                                  : AppColors.textSoft)
+                              : AppColors.textFaint,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

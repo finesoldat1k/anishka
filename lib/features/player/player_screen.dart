@@ -15,7 +15,8 @@ import '../../core/models/anime_episode.dart';
 import '../../core/models/anime_release.dart';
 import '../../core/models/anime_source.dart';
 import '../../core/models/voiceover.dart';
-import '../../core/repository/anime_repository.dart';
+import '../../core/repository/unified_repository.dart';
+import '../../core/services/app_services.dart';
 import '../../core/storage/library_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -49,7 +50,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   static const _hideDelay = Duration(seconds: 3);
   static const _seekStep = Duration(seconds: 10);
 
-  late final AnimeRepository _repository;
+  late final UnifiedRepository _repository;
   late final LibraryStore _library;
   final _focusNode = FocusNode(debugLabel: 'player');
 
@@ -134,7 +135,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _repository = context.read<AnimeRepository>();
+    _repository = context.read<AppServices>().repository;
     _library = context.read<LibraryStore>();
     if (_isMobile) {
       unawaited(
@@ -1086,63 +1087,9 @@ class _EmbedPlayerScaffold extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: kIsWeb
-                ? EmbedFrame(url: embedUrl, title: title)
-                : _ExternalPlayback(onOpen: onOpenExternal),
+            child: EmbedFrame(url: embedUrl, title: title),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ExternalPlayback extends StatelessWidget {
-  const _ExternalPlayback({required this.onOpen});
-
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(AppIcons.plugs, size: 34, color: AppColors.textMuted),
-            const SizedBox(height: 16),
-            const Text(
-              'эта студия отдаёт видео во встроенном плеере',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: AppFonts.display,
-                fontWeight: FontWeight.w500,
-                fontSize: 16,
-                letterSpacing: -0.4,
-                color: AppColors.text,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'на этом устройстве встроенный плеер недоступен — '
-              'откройте серию в браузере.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: AppFonts.body,
-                fontSize: 12.5,
-                height: 1.5,
-                color: AppColors.textMuted,
-              ),
-            ),
-            const SizedBox(height: 22),
-            GradientButton(
-              label: 'открыть в браузере',
-              icon: AppIcons.arrowSquareOut,
-              primary: true,
-              onTap: onOpen,
-            ),
-          ],
-        ),
       ),
     );
   }

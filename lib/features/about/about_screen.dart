@@ -1,9 +1,14 @@
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:provider/provider.dart';
 import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api/metadata/metadata_provider.dart';
+import '../../core/api/sources/source_provider.dart';
 import '../../core/cache/cache_service.dart';
+import '../../core/config/image_proxy.dart';
+import '../../core/services/app_services.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../ui/widgets/brand_mark.dart';
@@ -16,15 +21,26 @@ class AboutScreen extends StatefulWidget {
   State<AboutScreen> createState() => _AboutScreenState();
 }
 
-class _AboutScreenState extends State<AboutScreen> {
+class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
   CacheStats _stats = CacheStats.empty;
   bool _loadingStats = true;
   bool _clearing = false;
+  ServicesHealth? _health;
+  bool _checkingHealth = false;
+  bool _proxyEnabled = ImageProxyConfig.enabled;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 4, vsync: this);
     _refreshStats();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _refreshStats() async {
@@ -33,6 +49,16 @@ class _AboutScreenState extends State<AboutScreen> {
     setState(() {
       _stats = stats;
       _loadingStats = false;
+    });
+  }
+
+  Future<void> _checkHealth() async {
+    setState(() => _checkingHealth = true);
+    final health = await context.read<AppServices>().healthCheck();
+    if (!mounted) return;
+    setState(() {
+      _health = health;
+      _checkingHealth = false;
     });
   }
 
@@ -47,12 +73,26 @@ class _AboutScreenState extends State<AboutScreen> {
       _clearing = false;
       _loadingStats = false;
     });
+    _showSnack('кэш очищен');
+  }
+
+  Future<void> _toggleProxy(bool value) async {
+    setState(() => _proxyEnabled = value);
+    ImageProxyConfig.enabled = value;
+    _showSnack(value ? 'прокси изображений включён' : 'прокси изображений выключен');
+  }
+
+  Future<void> _setPreferredProxy(String? proxyId) async {
+    ImageProxyConfig.preferredProxy = proxyId == null
+        ? null
+        : ImageProxyConfig.proxies.firstWhere((p) => p.id == proxyId);
+    _showSnack('прокси изменён');
+  }
+
+  void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text(
-          'кэш очищен',
-          style: TextStyle(fontFamily: AppFonts.body, fontSize: 13),
-        ),
+        content: Text(msg, style: const TextStyle(fontFamily: AppFonts.body, fontSize: 13)),
         backgroundColor: AppColors.surfaceHigh,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
@@ -71,12 +111,15 @@ class _AboutScreenState extends State<AboutScreen> {
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 760;
+    final width = MediaQuery.sizeOf(context).width;
+    final isDesktop = width >= 900;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 980),
+            constraints: BoxConstraints(maxWidth: isDesktop ? 1100 : 980),
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               padding: EdgeInsets.fromLTRB(
@@ -97,7 +140,7 @@ class _AboutScreenState extends State<AboutScreen> {
                       ),
                       const SizedBox(width: 12),
                       const Text(
-                        'о приложении',
+                        'настройки',
                         style: TextStyle(
                           fontFamily: AppFonts.display,
                           fontWeight: FontWeight.w600,
@@ -111,86 +154,73 @@ class _AboutScreenState extends State<AboutScreen> {
                   const SizedBox(height: 26),
                   _BrandPanel(compact: compact, stats: _stats),
                   const SizedBox(height: 14),
-                  _CachePanel(
-                    compact: compact,
-                    stats: _stats,
-                    loading: _loadingStats,
-                    clearing: _clearing,
-                    onClear: _clearCache,
-                  ),
-                  const SizedBox(height: 14),
-                  _Panel(
-                    title: 'что это',
-                    icon: AppIcons.sparkle,
-                    compact: compact,
-                    child: const Text(
-                      'анишка — спокойный клиент для аниме без лишнего. '
-                      'каталог и поиск работают через shikimori, серии '
-                      'воспроизводятся с открытых источников, а библиотека '
-                      'хранится только на вашем устройстве.',
-                      style: _bodyStyle,
+
+                  // Tab Bar
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.border),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  _Panel(
-                    title: 'источники',
-                    icon: AppIcons.broadcast,
-                    compact: compact,
-                    child: Column(
-                      children: [
-                        _SourceRow(
-                          name: 'shikimori',
-                          role: 'каталог, поиск, постеры и кадры из серий',
-                          url: 'https://shikimori.io',
-                        ),
-                        _SourceRow(
-                          name: 'anilibria',
-                          role: 'озвучка студии и hls-серии',
-                          url: 'https://anilibria.tv',
-                        ),
-                        _SourceRow(
-                          name: 'animevost',
-                          role: 'дополнительные серии в озвучке студии',
-                          url: 'https://animevost.org',
-                        ),
-                        _SourceRow(
-                          name: 'anidub',
-                          role: 'дополнительные серии в озвучке студии',
-                          url: 'https://anidub.com',
-                        ),
-                        _SourceRow(
-                          name: 'anilist, kitsu и jikan',
-                          role: 'трейлеры, рейтинги и запасные описания',
-                          url: 'https://anilist.co',
-                        ),
+                    child: TabBar(
+                      controller: _tabController,
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      dividerColor: Colors.transparent,
+                      labelColor: AppColors.text,
+                      unselectedLabelColor: AppColors.textMuted,
+                      labelStyle: const TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12.5,
+                      ),
+                      tabs: const [
+                        Tab(icon: Icon(AppIcons.speedometer, size: 16), text: 'сервисы'),
+                        Tab(icon: Icon(AppIcons.images, size: 16), text: 'изображения'),
+                        Tab(icon: Icon(AppIcons.list, size: 16), text: 'приоритеты'),
+                        Tab(icon: Icon(AppIcons.info, size: 16), text: 'о приложении'),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  _Panel(
-                    title: 'библиотека',
-                    icon: AppIcons.lock,
-                    compact: compact,
-                    child: const Text(
-                      'избранное, закладки и прогресс просмотра не покидают '
-                      'устройство. аккаунт не нужен, регистрация не нужна, '
-                      'аналитика не собирается.',
-                      style: _bodyStyle,
+                  const SizedBox(height: 16),
+
+                  // Tab Content
+                  SizedBox(
+                    height: 520,
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _ServicesTab(
+                          compact: compact,
+                          services: context.watch<AppServices>(),
+                          health: _health,
+                          checking: _checkingHealth,
+                          onCheckHealth: _checkHealth,
+                        ),
+                        _ImagesTab(
+                          compact: compact,
+                          proxyEnabled: _proxyEnabled,
+                          onProxyToggle: _toggleProxy,
+                          preferredProxy: ImageProxyConfig.preferredProxy?.id,
+                          onProxyChange: _setPreferredProxy,
+                          stats: _stats,
+                          loading: _loadingStats,
+                          clearing: _clearing,
+                          onClearCache: _clearCache,
+                        ),
+                        _PriorityTab(
+                          compact: compact,
+                          services: context.watch<AppServices>(),
+                        ),
+                        _AboutTab(compact: compact),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  _Panel(
-                    title: 'дисклеймер',
-                    icon: AppIcons.gavel,
-                    compact: compact,
-                    child: const Text(
-                      'приложение не хранит и не распространяет видео. все '
-                      'серии, постеры и описания принадлежат их авторам и '
-                      'правообладателям. источники можно отключить, изменив '
-                      'сборку приложения.',
-                      style: _bodyStyle,
-                    ),
-                  ),
+
                   const SizedBox(height: 24),
                   Center(
                     child: GradientButton(
@@ -228,6 +258,7 @@ const _bodyStyle = TextStyle(
   color: AppColors.textSoft,
 );
 
+// ===== BRAND PANEL =====
 class _BrandPanel extends StatelessWidget {
   const _BrandPanel({required this.compact, required this.stats});
 
@@ -342,183 +373,32 @@ class _StatPill extends StatelessWidget {
   }
 }
 
-class _CachePanel extends StatelessWidget {
-  const _CachePanel({
-    required this.compact,
-    required this.stats,
-    required this.loading,
-    required this.clearing,
-    required this.onClear,
-  });
-
-  final bool compact;
-  final CacheStats stats;
-  final bool loading;
-  final bool clearing;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Panel(
-      title: 'кэш',
-      icon: AppIcons.images,
-      compact: compact,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (loading)
-                      Container(
-                        width: 110,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceHigh,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      )
-                    else
-                      Text(
-                        stats.label,
-                        style: TextStyle(
-                          fontFamily: AppFonts.display,
-                          fontWeight: FontWeight.w600,
-                          fontSize: compact ? 26 : 32,
-                          letterSpacing: -1,
-                          color: AppColors.text,
-                        ),
-                      ),
-                    const SizedBox(height: 5),
-                    Text(
-                      'постеры, кадры из серий и трейлеры',
-                      style: TextStyle(
-                        fontFamily: AppFonts.body,
-                        fontSize: 11.5,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              _ClearButton(
-                busy: clearing,
-                enabled: !loading && stats.bytes > 0,
-                onTap: onClear,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _MetaText(icon: AppIcons.images, label: '${stats.count} записей'),
-              const SizedBox(width: 16),
-              _MetaText(
-                icon: AppIcons.clockCounterClockwise,
-                label: '${stats.temporaryLabel} в памяти',
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ClearButton extends StatefulWidget {
-  const _ClearButton({
-    required this.busy,
-    required this.enabled,
+// ===== ROUND BUTTON =====
+class _RoundButton extends StatelessWidget {
+  const _RoundButton({
+    required this.icon,
+    required this.tooltip,
     required this.onTap,
   });
 
-  final bool busy;
-  final bool enabled;
+  final IconData icon;
+  final String tooltip;
   final VoidCallback onTap;
 
   @override
-  State<_ClearButton> createState() => _ClearButtonState();
-}
-
-class _ClearButtonState extends State<_ClearButton> {
-  bool _hovered = false;
-  bool _pressed = false;
-
-  @override
   Widget build(BuildContext context) {
-    final active = widget.enabled && !widget.busy;
-    return MouseRegion(
-      cursor: active ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() {
-        _hovered = false;
-        _pressed = false;
-      }),
-      child: GestureDetector(
-        onTapDown: active ? (_) => setState(() => _pressed = true) : null,
-        onTapUp: active
-            ? (_) {
-                setState(() => _pressed = false);
-                widget.onTap();
-              }
-            : null,
-        onTapCancel: () => setState(() => _pressed = false),
-        child: AnimatedScale(
-          scale: _pressed ? 0.96 : 1,
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: active
-                  ? (_hovered
-                        ? AppColors.planned.withValues(alpha: 0.20)
-                        : AppColors.planned.withValues(alpha: 0.12))
-                  : AppColors.surface.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: active
-                    ? AppColors.planned.withValues(alpha: 0.45)
-                    : AppColors.border,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.busy)
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.8,
-                      color: AppColors.planned,
-                    ),
-                  )
-                else
-                  Icon(
-                    AppIcons.x,
-                    size: 15,
-                    color: active ? AppColors.planned : AppColors.textFaint,
-                  ),
-                const SizedBox(width: 7),
-                Text(
-                  widget.busy ? 'очищаем' : 'очистить',
-                  style: TextStyle(
-                    fontFamily: AppFonts.body,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    color: active ? AppColors.planned : AppColors.textFaint,
-                  ),
-                ),
-              ],
-            ),
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: AppColors.surface.withValues(alpha: 0.8),
+        shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(icon, size: 20, color: AppColors.textSoft),
           ),
         ),
       ),
@@ -526,44 +406,21 @@ class _ClearButtonState extends State<_ClearButton> {
   }
 }
 
-class _MetaText extends StatelessWidget {
-  const _MetaText({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 12, color: AppColors.textFaint),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: const TextStyle(
-            fontFamily: AppFonts.body,
-            fontSize: 11,
-            color: AppColors.textFaint,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
+// ===== PANEL =====
 class _Panel extends StatelessWidget {
   const _Panel({
     required this.title,
     required this.icon,
     required this.child,
     required this.compact,
+    this.action,
   });
 
   final String title;
   final IconData icon;
   final Widget child;
   final bool compact;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -593,20 +450,1128 @@ class _Panel extends StatelessWidget {
                 child: Icon(icon, size: 16, color: AppColors.planned),
               ),
               const SizedBox(width: 11),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: AppFonts.display,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  letterSpacing: -0.2,
-                  color: AppColors.text,
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontFamily: AppFonts.display,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    letterSpacing: -0.2,
+                    color: AppColors.text,
+                  ),
                 ),
               ),
+              if (action != null) action!,
             ],
           ),
           const SizedBox(height: 13),
           child,
+        ],
+      ),
+    );
+  }
+}
+
+// ===== SERVICES TAB =====
+class _ServicesTab extends StatelessWidget {
+  const _ServicesTab({
+    required this.compact,
+    required this.services,
+    required this.health,
+    required this.checking,
+    required this.onCheckHealth,
+  });
+
+  final bool compact;
+  final AppServices services;
+  final ServicesHealth? health;
+  final bool checking;
+  final VoidCallback onCheckHealth;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        children: [
+          _ServiceGroup(
+            title: 'метаданные',
+            subtitle: 'каталог, поиск, описания, постеры, рейтинги',
+            providers: services.allMetadata,
+            enabled: services.isMetadataEnabled,
+            toggle: (id, v) => services.toggleMetadata(id, v),
+            healthById: _byId(health?.metadata),
+            roles: const {
+              'shikimori': 'основной каталог, поиск, постеры, кадры',
+              'anilist': 'описания, студии, жанры, рейтинг, трейлеры',
+              'jikan': 'запасные названия, описания, постеры, персонажи',
+              'kitsu': 'английские названия, обложки, YouTube трейлеры',
+              'yani': 'постеры, студии, озвучки, связи',
+            },
+          ),
+          const SizedBox(height: 16),
+          _ServiceGroup(
+            title: 'источники видео',
+            subtitle: 'озвучки, субтитры, HLS-потоки, серии',
+            providers: services.allSources,
+            enabled: services.isSourceEnabled,
+            toggle: (id, v) => services.toggleSource(id, v),
+            healthById: _byId(health?.sources),
+            roles: const {
+              'anilibria': 'основная студия, HLS серии, множественные озвучки',
+              'yani': 'агрегатор студий, серии, треки',
+              'animevost': 'дополнительные серии (place holder)',
+              'anidub': 'дополнительные серии (place holder)',
+            },
+          ),
+          const SizedBox(height: 18),
+          _HealthBar(
+            checking: checking,
+            ok: (health?.metadata.where((h) => h.ok).length ?? 0) +
+                (health?.sources.where((h) => h.ok).length ?? 0),
+            total: (health?.metadata.length ?? 0) + (health?.sources.length ?? 0),
+            onCheck: onCheckHealth,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, ServiceHealth> _byId(List<ServiceHealth>? list) {
+    final map = <String, ServiceHealth>{};
+    for (final h in list ?? const []) {
+      map[h.id] = h;
+    }
+    return map;
+  }
+}
+
+class _ServiceGroup extends StatelessWidget {
+  const _ServiceGroup({
+    required this.title,
+    required this.subtitle,
+    required this.providers,
+    required this.enabled,
+    required this.toggle,
+    required this.healthById,
+    required this.roles,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<dynamic> providers;
+  final bool Function(String id) enabled;
+  final void Function(String id, bool v) toggle;
+  final Map<String, ServiceHealth> healthById;
+  final Map<String, String> roles;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      title: title,
+      icon: AppIcons.plugs,
+      compact: true,
+      action: Text(
+        subtitle,
+        style: const TextStyle(
+          fontFamily: AppFonts.body,
+          fontSize: 10.5,
+          color: AppColors.textMuted,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: providers.map((p) {
+          final id = p is MetadataProvider ? p.id : (p as SourceProvider).id;
+          final on = enabled(id);
+          final health = healthById[id];
+          return _ServiceTile(
+            name: p.displayName,
+            role: roles[id] ?? 'источник данных',
+            id: id,
+            value: on,
+            onChanged: (v) => toggle(id, v),
+            health: health,
+            latency: health?.latency,
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _ServiceTile extends StatelessWidget {
+  const _ServiceTile({
+    required this.name,
+    required this.role,
+    required this.id,
+    required this.value,
+    required this.onChanged,
+    required this.health,
+    this.latency,
+  });
+
+  final String name;
+  final String role;
+  final String id;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final ServiceHealth? health;
+  final Duration? latency;
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = health?.ok;
+    final dotColor = ok == null
+        ? AppColors.textFaint
+        : (ok ? AppColors.planned : AppColors.textFaint);
+    final latencyText = latency != null ? '${latency!.inMilliseconds} мс' : null;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => onChanged(!value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: value ? 0.4 : 0.2),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: value
+                ? AppColors.planned.withValues(alpha: 0.3)
+                : AppColors.border.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 120,
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppFonts.body,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  color: value ? AppColors.text : AppColors.textMuted,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                role,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppFonts.body,
+                  fontSize: 10.5,
+                  color: value ? AppColors.textSoft : AppColors.textMuted,
+                ),
+              ),
+            ),
+            if (latencyText != null) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: ok == true
+                      ? AppColors.planned.withValues(alpha: 0.15)
+                      : AppColors.textFaint.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  latencyText,
+                  style: TextStyle(
+                    fontFamily: AppFonts.body,
+                    fontSize: 9.5,
+                    color: ok == true ? AppColors.planned : AppColors.textFaint,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(width: 10),
+            Transform.scale(
+              scale: 0.8,
+              child: Switch.adaptive(
+                value: value,
+                onChanged: onChanged,
+                activeColor: AppColors.planned,
+                inactiveTrackColor: AppColors.surface.withValues(alpha: 0.5),
+                inactiveThumbColor: AppColors.textFaint,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HealthBar extends StatelessWidget {
+  const _HealthBar({
+    required this.checking,
+    required this.ok,
+    required this.total,
+    required this.onCheck,
+  });
+
+  final bool checking;
+  final int ok;
+  final int total;
+  final VoidCallback onCheck;
+
+  @override
+  Widget build(BuildContext context) {
+    final allOk = ok == total && total > 0;
+    final statusColor = checking || total == 0
+        ? AppColors.textMuted
+        : (allOk ? AppColors.planned : AppColors.text);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onCheck,
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: checking
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.planned,
+                      ),
+                    )
+                  : Icon(
+                      AppIcons.compass,
+                      size: 16,
+                      color: statusColor,
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  checking
+                      ? 'проверяем источники…'
+                      : total == 0
+                          ? 'нет данных о сервисах'
+                          : 'работают $ok из $total сервисов',
+                  style: TextStyle(
+                    fontFamily: AppFonts.body,
+                    fontSize: 12.5,
+                    color: checking || allOk
+                        ? AppColors.textSoft
+                        : AppColors.text,
+                    fontWeight: checking || allOk
+                        ? FontWeight.normal
+                        : FontWeight.w600,
+                  ),
+                ),
+                if (!checking && total > 0 && ok < total)
+                  Text(
+                    'недоступные сервисы пропускаются автоматически',
+                    style: TextStyle(
+                      fontFamily: AppFonts.body,
+                      fontSize: 10,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===== IMAGES TAB =====
+class _ImagesTab extends StatelessWidget {
+  const _ImagesTab({
+    required this.compact,
+    required this.proxyEnabled,
+    required this.onProxyToggle,
+    required this.preferredProxy,
+    required this.onProxyChange,
+    required this.stats,
+    required this.loading,
+    required this.clearing,
+    required this.onClearCache,
+  });
+
+  final bool compact;
+  final bool proxyEnabled;
+  final ValueChanged<bool> onProxyToggle;
+  final String? preferredProxy;
+  final ValueChanged<String?> onProxyChange;
+  final CacheStats stats;
+  final bool loading;
+  final bool clearing;
+  final VoidCallback onClearCache;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        children: [
+          // Image Proxy Section
+          _Panel(
+            title: 'прокси изображений',
+            icon: AppIcons.globe,
+            compact: compact,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SettingRow(
+                  title: 'включить прокси',
+                  subtitle: 'обходит CORS для постеров shikimori и других источников',
+                  trailing: Transform.scale(
+                    scale: 0.85,
+                    child: Switch.adaptive(
+                      value: proxyEnabled,
+                      onChanged: onProxyToggle,
+                      activeColor: AppColors.planned,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _SettingRow(
+                  title: 'предпочитаемый прокси',
+                  subtitle: 'авто — выбирает лучший для каждого хоста',
+                  trailing: _ProxyDropdown(
+                    value: preferredProxy,
+                    onChanged: onProxyChange,
+                    enabled: proxyEnabled,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (proxyEnabled)
+                  _ProxyList(proxies: ImageProxyConfig.proxies, current: preferredProxy)
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+                    ),
+                    child: Text(
+                      'прокси выключен — постеры могут не загружаться из-за CORS',
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Cache Section
+          _Panel(
+            title: 'кэш изображений',
+            icon: AppIcons.images,
+            compact: compact,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (loading)
+                            Container(
+                              width: 110,
+                              height: 30,
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceHigh,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            )
+                          else
+                            Text(
+                              stats.label,
+                              style: TextStyle(
+                                fontFamily: AppFonts.display,
+                                fontWeight: FontWeight.w600,
+                                fontSize: compact ? 26 : 32,
+                                letterSpacing: -1,
+                                color: AppColors.text,
+                              ),
+                            ),
+                          const SizedBox(height: 5),
+                          Text(
+                            'постеры, кадры из серий и трейлеры',
+                            style: TextStyle(
+                              fontFamily: AppFonts.body,
+                              fontSize: 11.5,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _ClearButton(
+                      busy: clearing,
+                      enabled: !loading && stats.bytes > 0,
+                      onTap: onClearCache,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _MetaText(icon: AppIcons.images, label: '${stats.count} записей'),
+                    const SizedBox(width: 16),
+                    _MetaText(
+                      icon: AppIcons.clockCounterClockwise,
+                      label: '${stats.temporaryLabel} в памяти',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingRow extends StatelessWidget {
+  const _SettingRow({
+    required this.title,
+    required this.subtitle,
+    required this.trailing,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontFamily: AppFonts.body,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: AppColors.text,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontFamily: AppFonts.body,
+                  fontSize: 10.5,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        trailing,
+      ],
+    );
+  }
+}
+
+class _ProxyDropdown extends StatelessWidget {
+  const _ProxyDropdown({
+    required this.value,
+    required this.onChanged,
+    required this.enabled,
+  });
+
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: enabled ? AppColors.surface : AppColors.surface.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isDense: true,
+          style: TextStyle(
+            fontFamily: AppFonts.body,
+            fontSize: 12,
+            color: enabled ? AppColors.text : AppColors.textMuted,
+          ),
+          dropdownColor: AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(10),
+          items: [
+            const DropdownMenuItem<String>(
+              value: null,
+              child: Text('авто (рекомендуется)'),
+            ),
+            ...ImageProxyConfig.proxies.map((p) => DropdownMenuItem<String>(
+              value: p.id,
+              child: Text(p.name),
+            )),
+          ],
+          onChanged: enabled ? onChanged : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _ProxyList extends StatelessWidget {
+  const _ProxyList({
+    required this.proxies,
+    required this.current,
+  });
+
+  final List<ImageProxyService> proxies;
+  final String? current;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: proxies.map((p) {
+        final isCurrent = current == p.id || (current == null && p == proxies.first);
+        return Container(
+          margin: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isCurrent
+                ? AppColors.planned.withValues(alpha: 0.08)
+                : AppColors.surface.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isCurrent
+                  ? AppColors.planned.withValues(alpha: 0.3)
+                  : AppColors.border.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: isCurrent ? AppColors.planned : AppColors.textFaint,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p.name,
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11.5,
+                        color: isCurrent ? AppColors.text : AppColors.textSoft,
+                      ),
+                    ),
+                    Text(
+                      p.notes,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 9.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isCurrent)
+                Icon(AppIcons.check, size: 16, color: AppColors.planned),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ===== PRIORITY TAB =====
+class _PriorityTab extends StatelessWidget {
+  const _PriorityTab({
+    required this.compact,
+    required this.services,
+  });
+
+  final bool compact;
+  final AppServices services;
+
+  @override
+  Widget build(BuildContext context) {
+    final registry = services.registry;
+    final metadataProviders = registry.enabledMetadata;
+    final sourceProviders = registry.enabledSources;
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        children: [
+          _Panel(
+            title: 'приоритет метаданных',
+            icon: AppIcons.list,
+            compact: compact,
+            action: Text(
+              'первый в списке — пробуется первым при загрузке',
+              style: const TextStyle(
+                fontFamily: AppFonts.body,
+                fontSize: 10.5,
+                color: AppColors.textMuted,
+              ),
+            ),
+            child: _PriorityList(
+              providers: metadataProviders,
+              isMetadata: true,
+              onReorder: (oldIndex, newIndex) {
+                registry.reorderMetadata(oldIndex, newIndex);
+              },
+            ),
+          ),
+          const SizedBox(height: 14),
+          _Panel(
+            title: 'приоритет источников видео',
+            icon: AppIcons.filmStrip,
+            compact: compact,
+            action: Text(
+              'используется для выбора озвучки при воспроизведении',
+              style: const TextStyle(
+                fontFamily: AppFonts.body,
+                fontSize: 10.5,
+                color: AppColors.textMuted,
+              ),
+            ),
+            child: _PriorityList(
+              providers: sourceProviders,
+              onReorder: (oldIndex, newIndex) {
+                registry.reorderSources(oldIndex, newIndex);
+              },
+            ),
+          ),
+          const SizedBox(height: 14),
+          _Panel(
+            title: 'назначение провайдеров',
+            icon: AppIcons.funnel,
+            compact: compact,
+            child: Column(
+              children: [
+                _PurposeRow(
+                  purpose: 'каталог и поиск',
+                  recommended: 'shikimori',
+                  current: 'shikimori (единственный)',
+                  description: 'использует API shikimori для списков и поиска',
+                ),
+                _PurposeRow(
+                  purpose: 'описания и рейтинги',
+                  recommended: 'shikimori',
+                  current: 'shikimori',
+                  description: 'Shikimori даёт описания, студии, жанры, рейтинг',
+                ),
+                _PurposeRow(
+                  purpose: 'постеры и обложки',
+                  recommended: 'shikimori',
+                  current: 'shikimori',
+                  description: 'Shikimori даёт постеры и фоновые изображения',
+                ),
+                _PurposeRow(
+                  purpose: 'трейлеры',
+                  recommended: 'shikimori',
+                  current: 'shikimori (YouTube ID)',
+                  description: 'Shikimori возвращает YouTube ID трейлеров',
+                ),
+                _PurposeRow(
+                  purpose: 'озвучка и серии',
+                  recommended: 'anilibria / yani / animevost / sameband / yummyanime / anilibme',
+                  current: 'anilibria → yani → animevost → sameband → yummyanime → anilibme',
+                  description: 'AniLibria — лучшее качество HLS, Yani — агрегатор, AnimeVost/SameBand/Yummy/AnilibMe — API',
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PriorityList extends StatefulWidget {
+  const _PriorityList({
+    required this.providers,
+    required this.onReorder,
+    this.isMetadata = false,
+  });
+
+  final List<dynamic> providers;
+  final void Function(int, int) onReorder;
+  final bool isMetadata;
+
+  @override
+  State<_PriorityList> createState() => _PriorityListState();
+}
+
+class _PriorityListState extends State<_PriorityList> {
+  late List<dynamic> _providers;
+
+  @override
+  void initState() {
+    super.initState();
+    _providers = List.from(widget.providers);
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+      final item = _providers.removeAt(oldIndex);
+      _providers.insert(newIndex, item);
+    });
+    widget.onReorder(oldIndex, newIndex);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ReorderableListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      onReorder: _onReorder,
+      children: _providers.asMap().entries.map((entry) {
+        final index = entry.key;
+        final p = entry.value;
+        final id = p is MetadataProvider ? p.id : (p as SourceProvider).id;
+        final name = p.displayName;
+        return Container(
+          key: ValueKey(id),
+          margin: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.planned.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '#${index + 1}',
+                  style: const TextStyle(
+                    fontFamily: AppFonts.display,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    color: AppColors.planned,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                        color: AppColors.text,
+                      ),
+                    ),
+                    Text(
+                      'id: $id',
+                      style: const TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 9.5,
+                        color: AppColors.textFaint,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ReorderableDragStartListener(
+                index: index,
+                child: Icon(
+                  AppIcons.dotsThreeVertical,
+                  size: 18,
+                  color: AppColors.textFaint,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _PurposeRow extends StatelessWidget {
+  const _PurposeRow({
+    required this.purpose,
+    required this.recommended,
+    required this.current,
+    required this.description,
+  });
+
+  final String purpose;
+  final String recommended;
+  final String current;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                purpose,
+                style: const TextStyle(
+                  fontFamily: AppFonts.body,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  color: AppColors.text,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.planned.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'рекомендуется: $recommended',
+                  style: const TextStyle(
+                    fontFamily: AppFonts.body,
+                    fontSize: 9,
+                    color: AppColors.planned,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(AppIcons.arrowRight, size: 12, color: AppColors.textMuted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'текущий: $current',
+                  style: const TextStyle(
+                    fontFamily: AppFonts.body,
+                    fontSize: 10.5,
+                    color: AppColors.textSoft,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: const TextStyle(
+              fontFamily: AppFonts.body,
+              fontSize: 10,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===== ABOUT TAB =====
+class _AboutTab extends StatelessWidget {
+  const _AboutTab({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        children: [
+          _Panel(
+            title: 'что это',
+            icon: AppIcons.sparkle,
+            compact: compact,
+            child: const Text(
+              'анишка — спокойный клиент для аниме без лишнего. '
+              'каталог и поиск работают через shikimori, серии '
+              'воспроизводятся с открытых источников, а библиотека '
+              'хранится только на вашем устройстве.',
+              style: _bodyStyle,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _Panel(
+            title: 'источники данных',
+            icon: AppIcons.broadcast,
+            compact: compact,
+            child: Column(
+              children: [
+                _SourceRow(
+                  name: 'shikimori',
+                  role: 'каталог, поиск, постеры, кадры из серий',
+                  url: 'https://shikimori.io',
+                ),
+                _SourceRow(
+                  name: 'anilibria',
+                  role: 'озвучка студии и HLS-серии',
+                  url: 'https://anilibria.tv',
+                ),
+                _SourceRow(
+                  name: 'yani',
+                  role: 'агрегатор студий озвучки, серии, треки',
+                  url: 'https://yani.tv',
+                ),
+                _SourceRow(
+                  name: 'animevost',
+                  role: 'озвучка через api.animevost.org',
+                  url: 'https://animevost.org',
+                ),
+                _SourceRow(
+                  name: 'sameband',
+                  role: 'озвучка SameBand Studio',
+                  url: 'https://sameband.studio',
+                ),
+                _SourceRow(
+                  name: 'yummyanime',
+                  role: 'озвучка Yummy Anime',
+                  url: 'https://site.yummyani.me',
+                ),
+                _SourceRow(
+                  name: 'anilibme',
+                  role: 'озвучка AnimeLib',
+                  url: 'https://animelib.org',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _Panel(
+            title: 'библиотека и приватность',
+            icon: AppIcons.lock,
+            compact: compact,
+            child: const Text(
+              'избранное, закладки и прогресс просмотра не покидают '
+              'устройство. аккаунт не нужен, регистрация не нужна, '
+              'аналитика не собирается. всё хранится локально.',
+              style: _bodyStyle,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _Panel(
+            title: 'дисклеймер',
+            icon: AppIcons.gavel,
+            compact: compact,
+            child: const Text(
+              'приложение не хранит и не распространяет видео. все '
+              'серии, постеры и описания принадлежат их авторам и '
+              'правообладателям. источники можно включить/выключить в настройках.',
+              style: _bodyStyle,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _Panel(
+            title: 'разработка',
+            icon: AppIcons.buildings,
+            compact: compact,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SourceRow(
+                  name: 'flutter + material 3',
+                  role: 'фреймворк и дизайн-система',
+                  url: 'https://flutter.dev',
+                ),
+                _SourceRow(
+                  name: 'media_kit',
+                  role: 'видеоплеер с поддержкой HLS',
+                  url: 'https://github.com/media-kit/media-kit',
+                ),
+                _SourceRow(
+                  name: 'cached_network_image',
+                  role: 'кэширование изображений',
+                  url: 'https://pub.dev/packages/cached_network_image',
+                ),
+                _SourceRow(
+                  name: 'go_router',
+                  role: 'навигация',
+                  url: 'https://pub.dev/packages/go_router',
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -680,34 +1645,124 @@ class _SourceRow extends StatelessWidget {
   }
 }
 
-class _RoundButton extends StatelessWidget {
-  const _RoundButton({
-    required this.icon,
-    required this.tooltip,
+class _ClearButton extends StatefulWidget {
+  const _ClearButton({
+    required this.busy,
+    required this.enabled,
     required this.onTap,
   });
 
-  final IconData icon;
-  final String tooltip;
+  final bool busy;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
+  State<_ClearButton> createState() => _ClearButtonState();
+}
+
+class _ClearButtonState extends State<_ClearButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: AppColors.surface.withValues(alpha: 0.8),
-        shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, size: 20, color: AppColors.textSoft),
+    final active = widget.enabled && !widget.busy;
+    return MouseRegion(
+      cursor: active ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() {
+        _hovered = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: active ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: active
+            ? (_) {
+                setState(() => _pressed = false);
+                widget.onTap();
+              }
+            : null,
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.96 : 1,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: active
+                  ? (_hovered
+                      ? AppColors.planned.withValues(alpha: 0.20)
+                      : AppColors.planned.withValues(alpha: 0.12))
+                  : AppColors.surface.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: active
+                    ? AppColors.planned.withValues(alpha: 0.45)
+                    : AppColors.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.busy)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.8,
+                      color: AppColors.planned,
+                    ),
+                  )
+                else
+                  Icon(
+                    AppIcons.x,
+                    size: 15,
+                    color: active ? AppColors.planned : AppColors.textFaint,
+                  ),
+                const SizedBox(width: 7),
+                Text(
+                  widget.busy ? 'очищаем' : 'очистить',
+                  style: TextStyle(
+                    fontFamily: AppFonts.body,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    color: active ? AppColors.planned : AppColors.textFaint,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _MetaText extends StatelessWidget {
+  const _MetaText({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: AppColors.textFaint),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(
+            fontFamily: AppFonts.body,
+            fontSize: 11,
+            color: AppColors.textFaint,
+          ),
+        ),
+      ],
     );
   }
 }

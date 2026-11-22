@@ -92,15 +92,6 @@ GoRouter createAppRouter() {
         },
       ),
       GoRoute(
-        path: '/anime/:id',
-        name: 'anime',
-        builder: (context, state) {
-          final id = int.tryParse(state.pathParameters['id'] ?? '');
-          if (id == null || id <= 0) return const _RouteError();
-          return DetailsScreen(releaseId: id);
-        },
-      ),
-      GoRoute(
         path: '/anime/shikimori/:id',
         name: 'anime-shikimori',
         builder: (context, state) {

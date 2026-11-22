@@ -5,7 +5,8 @@ import 'package:provider/provider.dart';
 
 import '../../core/models/anime_source.dart';
 import '../../core/models/voiceover.dart';
-import '../../core/repository/anime_repository.dart';
+import '../../core/repository/unified_repository.dart';
+import '../../core/services/app_services.dart';
 import '../../core/storage/library_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -31,7 +32,7 @@ class VoiceoverScreen extends StatefulWidget {
 }
 
 class _VoiceoverScreenState extends State<VoiceoverScreen> {
-  late final AnimeRepository _repository;
+  late final UnifiedRepository _repository;
   final _searchController = TextEditingController();
   AnimeWithSources? _anime;
   bool _loading = false;
@@ -41,7 +42,7 @@ class _VoiceoverScreenState extends State<VoiceoverScreen> {
   @override
   void initState() {
     super.initState();
-    _repository = context.read<AnimeRepository>();
+    _repository = context.read<AppServices>().repository;
     _anime = widget.animeWithSources;
     if (_shouldLoad) _load();
   }
@@ -304,58 +305,73 @@ class _VoiceSearch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            AppIcons.magnifyingGlass,
-            size: 18,
-            color: AppColors.textMuted,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => controller.clear(), // Focus handled by TextField
+      child: Container(
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.border,
           ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              style: const TextStyle(
-                fontFamily: AppFonts.body,
-                fontSize: 13,
-                color: AppColors.text,
-              ),
-              decoration: const InputDecoration(
-                isCollapsed: true,
-                border: InputBorder.none,
-                hintText: 'найти студию озвучки',
-                hintStyle: TextStyle(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 26,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              AppIcons.magnifyingGlass,
+              size: 20,
+              color: AppColors.textMuted,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                onChanged: onChanged,
+                style: const TextStyle(
                   fontFamily: AppFonts.body,
-                  fontSize: 13,
-                  color: AppColors.textFaint,
+                  fontSize: 14,
+                  color: AppColors.text,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  hintText: 'найти студию озвучки',
+                  hintStyle: TextStyle(
+                    fontFamily: AppFonts.body,
+                    fontSize: 14,
+                    color: AppColors.textFaint,
+                  ),
                 ),
               ),
             ),
-          ),
-          if (controller.text.isNotEmpty)
-            IconButton(
-              tooltip: 'очистить',
-              onPressed: () {
-                controller.clear();
-                onChanged('');
-              },
-              icon: const Icon(AppIcons.x, size: 16),
-              style: IconButton.styleFrom(
-                foregroundColor: AppColors.textMuted,
-                minimumSize: const Size(28, 28),
-                padding: EdgeInsets.zero,
+            if (controller.text.isNotEmpty)
+              IconButton(
+                tooltip: 'очистить',
+                onPressed: () {
+                  controller.clear();
+                  onChanged('');
+                },
+                icon: const Icon(AppIcons.x, size: 17),
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.textMuted,
+                  minimumSize: const Size(30, 30),
+                  padding: EdgeInsets.zero,
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

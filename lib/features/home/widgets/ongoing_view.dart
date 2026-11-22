@@ -2,7 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/repository/anime_repository.dart';
+import '../../../core/repository/unified_repository.dart';
+import '../../../core/services/app_services.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/errors.dart';
 import '../../../core/utils/format.dart';
@@ -23,7 +24,7 @@ class OngoingView extends StatefulWidget {
 }
 
 class _OngoingViewState extends State<OngoingView> {
-  late final AnimeRepository _repository;
+  late final UnifiedRepository _repository;
   final List<dynamic> _items = [];
   bool _loading = true;
   bool _refreshing = false;
@@ -32,7 +33,7 @@ class _OngoingViewState extends State<OngoingView> {
   @override
   void initState() {
     super.initState();
-    _repository = context.read<AnimeRepository>();
+    _repository = context.read<AppServices>().repository;
     _load();
   }
 

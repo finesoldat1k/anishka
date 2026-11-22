@@ -3,6 +3,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'core/services/app_services.dart';
 import 'core/storage/library_store.dart';
 import 'core/storage/search_store.dart';
 
@@ -11,8 +12,13 @@ Future<void> main() async {
   MediaKit.ensureInitialized();
 
   final preferences = await SharedPreferences.getInstance();
+  final services = AppServices(prefs: preferences);
   final library = LibraryStore(preferences);
   final search = SearchStore(preferences);
 
-  runApp(AnishkaApp(library: library, search: search));
+  runApp(AnishkaApp(
+    services: services,
+    library: library,
+    search: search,
+  ));
 }

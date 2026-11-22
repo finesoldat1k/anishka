@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 import 'package:anishka/ui/icons/app_icons.dart';
 
+import '../../core/config/image_proxy.dart';
 import '../../core/theme/app_colors.dart';
 
 class AppImage extends StatelessWidget {
@@ -37,14 +38,12 @@ class AppImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final image = url == null || url!.isEmpty
+    final effectiveUrl = _resolveUrl(url);
+    final image = effectiveUrl == null || effectiveUrl.isEmpty
         ? _ImageFallback(label: fallbackLabel)
-        : kIsWeb && !canvasOnly
-        // постеры anilibria отдаются без access-control-allow-origin,
-        // поэтому canvas-загрузка в web не работает. html <img> в этом
-        // случае обходит cors и показывается как platform view.
+        : kIsWeb
         ? _WebImage(
-            url: url!,
+            url: effectiveUrl!,
             fit: fit,
             alignment: alignment,
             width: width,
@@ -52,7 +51,7 @@ class AppImage extends StatelessWidget {
             fallbackLabel: fallbackLabel,
           )
         : CachedNetworkImage(
-            imageUrl: url!,
+            imageUrl: effectiveUrl!,
             fit: fit,
             alignment: alignment,
             width: width,
@@ -67,6 +66,15 @@ class AppImage extends StatelessWidget {
 
     if (borderRadius == null) return image;
     return ClipRRect(borderRadius: borderRadius!, child: image);
+  }
+
+  String? _resolveUrl(String? url) {
+    if (url == null || url.isEmpty) return null;
+    // Apply image proxy for CORS-blocked hosts on web
+    if (kIsWeb && ImageProxyConfig.enabled) {
+      return ImageProxyConfig.buildProxiedUrl(url);
+    }
+    return url;
   }
 }
 
@@ -99,7 +107,8 @@ class _WebImage extends StatelessWidget {
           alignment: alignment,
           width: width,
           height: height,
-          webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+          // Use canvas strategy since proxy adds CORS headers
+          webHtmlElementStrategy: WebHtmlElementStrategy.never,
           errorBuilder: (context, error, stackTrace) =>
               _ImageFallback(label: fallbackLabel),
         ),

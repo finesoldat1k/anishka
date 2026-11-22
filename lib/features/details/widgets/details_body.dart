@@ -12,37 +12,18 @@ import '../../../ui/widgets/skeleton.dart';
 
 /// Below-hero content: a calm, typographic layout.
 ///
-/// Order is fixed and intentionally plain: the synopsis first, then
-/// `описание:` / `жанры:` / `студия:` as bare text lines, then episode stills. Related
-/// releases follow outside this widget. No chips, cards or decorative
-/// containers compete with the hero.
+/// Order is fixed: synopsis first, then genres / studios, then episode stills.
 class DetailsBody extends StatefulWidget {
-  /// Legacy AniLibria-only constructor.
-  const DetailsBody.legacy({
+  const DetailsBody({
     super.key,
-    required this.release,
-    required this.compact,
-  }) : animeWithSources = null,
-       loadingStills = false,
-       loadingRelated = false,
-       _legacy = true;
-
-  /// New Shikimori-based constructor with multiple sources.
-  const DetailsBody.sources({
-    super.key,
-    required this.animeWithSources,
+    required this.anime,
     required this.compact,
     this.loadingStills = false,
-    this.loadingRelated = false,
-  }) : release = null,
-       _legacy = false;
+  });
 
-  final AnimeRelease? release;
-  final AnimeWithSources? animeWithSources;
+  final AnimeWithSources anime;
   final bool compact;
   final bool loadingStills;
-  final bool loadingRelated;
-  final bool _legacy;
 
   @override
   State<DetailsBody> createState() => _DetailsBodyState();
@@ -51,38 +32,26 @@ class DetailsBody extends StatefulWidget {
 class _DetailsBodyState extends State<DetailsBody> {
   bool _expanded = false;
 
-  AnimeRelease? get _release => widget._legacy
-      ? widget.release
-      : widget.animeWithSources?.defaultSource?.release;
-
-  ShikimoriAnimeDetails? get _shikimoriAnime =>
-      widget.animeWithSources?.shikimoriAnime;
+  ShikimoriAnimeDetails get _details => widget.anime.shikimoriAnime;
 
   static String _cleanDescription(String raw) => cleanAnimeDescription(raw);
 
   @override
   Widget build(BuildContext context) {
     final compact = widget.compact;
-    final release = _release;
-    final details = _shikimoriAnime;
+    final details = _details;
 
-    final rawDescription = widget._legacy
-        ? (release?.displayDescription ?? '')
-        : (details?.descriptionText ?? '');
+    final rawDescription = details.descriptionText;
     final cleanedDescription = _cleanDescription(rawDescription);
     final description = cleanedDescription.isEmpty
         ? 'описание пока не добавили.'
         : cleanedDescription;
     final longDescription = description.length > 460;
 
-    final genres = widget._legacy
-        ? (release?.displayGenres ?? const <String>[])
-        : (details?.allGenres ?? const <String>[]);
-    final studios = widget._legacy
-        ? const <String>[]
-        : (details?.allStudios ?? const <String>[]);
+    final genres = details.allGenres;
+    final studios = details.allStudios;
 
-    final stills = _collectStills(release, details);
+    final stills = _collectStills(details);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -122,33 +91,21 @@ class _DetailsBodyState extends State<DetailsBody> {
     );
   }
 
-  List<String> _collectStills(
-    AnimeRelease? release,
-    ShikimoriAnimeDetails? details,
-  ) {
+  List<String> _collectStills(ShikimoriAnimeDetails details) {
     final stills = <String>{};
-    if (details != null) {
-      for (final screenshot in details.screenshots) {
-        if (screenshot.isNotEmpty) stills.add(screenshot);
-      }
+    for (final screenshot in details.screenshots) {
+      if (screenshot.isNotEmpty) stills.add(screenshot);
     }
 
-    final releases = <AnimeRelease>[
-      ?release,
-      ...?widget.animeWithSources?.sources.map((source) => source.release),
-    ];
-    for (final item in releases) {
-      final episodes = item.episodes;
-      for (final AnimeEpisode episode in episodes) {
+    for (final source in widget.anime.sources) {
+      for (final episode in source.release.episodes) {
         final preview = episode.previewUrl;
         if (preview != null && preview.isNotEmpty) stills.add(preview);
       }
     }
 
     if (stills.isEmpty) {
-      final fallback = widget._legacy
-          ? release?.backgroundUrl
-          : (details?.stillUrl ?? details?.metadataBackground);
+      final fallback = details.stillUrl ?? details.metadataBackground;
       if (fallback != null && fallback.isNotEmpty) stills.add(fallback);
     }
     return stills.take(18).toList();
@@ -189,7 +146,6 @@ class _Description extends StatelessWidget {
   }
 }
 
-/// `описание:` / `жанры: …` / `студия: …` — label and value both plain text.
 class _PlainMetaLine extends StatelessWidget {
   const _PlainMetaLine({
     required this.label,

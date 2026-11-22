@@ -48,7 +48,7 @@ class BrandMark extends StatelessWidget {
         mark,
         const SizedBox(width: 12),
         const Text(
-          'anishka',
+          'анишка',
           style: TextStyle(
             fontFamily: AppFonts.display,
             fontWeight: FontWeight.w600,
