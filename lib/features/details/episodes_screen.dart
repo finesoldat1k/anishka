@@ -46,12 +46,40 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
   bool _loading = false;
   String? _error;
 
+  // Pagination for episodes
+  static const int _episodesPerPage = 20;
+  int _visibleCount = _episodesPerPage;
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _repository = context.read<AppServices>().repository;
     _anime = widget.animeWithSources;
     if (_anime == null) _load();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    if (maxScroll - currentScroll <= 300) {
+      _loadMoreEpisodes();
+    }
+  }
+
+  void _loadMoreEpisodes() {
+    setState(() {
+      _visibleCount += _episodesPerPage;
+    });
   }
 
   int? get _animeId => widget.shikimoriId ?? _anime?.shikimoriAnime.id;
@@ -146,6 +174,7 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
       body: SafeArea(
         bottom: false,
         child: CustomScrollView(
+          controller: _scrollController,
           physics: const BouncingScrollPhysics(),
           slivers: [
             SliverToBoxAdapter(
@@ -230,10 +259,37 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(padding, 22, padding, 0),
                 sliver: SliverList.separated(
-                  itemCount: episodes.length,
+                  itemCount: _visibleCount < episodes.length
+                      ? _visibleCount + 1
+                      : episodes.length,
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 8),
                   itemBuilder: (context, index) {
+                    // Show load more indicator
+                    if (index >= _visibleCount && _visibleCount < episodes.length) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Column(
+                            children: [
+                              const CircularProgressIndicator(
+                                color: AppColors.accentBright,
+                                strokeWidth: 2,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'загрузка следующих ${_episodesPerPage} серий...',
+                                style: const TextStyle(
+                                  fontFamily: AppFonts.body,
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
                     final episode = episodes[index];
                     final isCurrent =
                         progress != null && progress.episode == episode.ordinal;
@@ -246,6 +302,22 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
                           : null,
                     );
                   },
+                ),
+              ),
+            if (_visibleCount < episodes.length)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: Text(
+                      'показано ${_visibleCount} из ${episodes.length} ${_episodesLabel(episodes.length)}',
+                      style: const TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 11,
+                        color: AppColors.textFaint,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             SliverToBoxAdapter(

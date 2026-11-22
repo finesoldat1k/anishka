@@ -773,15 +773,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  void _toggleControls() {
-    if (_controlsVisible && _playing) {
-      _hideTimer?.cancel();
-      setState(() => _controlsVisible = false);
-    } else {
-      _revealControls();
-    }
-  }
-
   Future<void> _openExternal() async {
     final url = _episode?.embedUrl;
     if (url == null || url.isEmpty) return;
@@ -943,16 +934,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
               const ColoredBox(color: Colors.black),
               if (controller != null)
                 Center(child: VideoSurface(controller: controller)),
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _toggleControls,
-                  onDoubleTap: () {
-                    _revealControls();
-                    unawaited(_togglePlay());
-                  },
-                ),
-              ),
+              // Error/loading overlays must be BEFORE the GestureDetector so they
+              // receive taps first (Stack hit-tests in reverse order: last child wins).
               if (_loadingRelease)
                 _PlayerLoading(onBack: _goBack)
               else if (_loadError != null)

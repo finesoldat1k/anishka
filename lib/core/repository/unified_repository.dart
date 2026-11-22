@@ -898,7 +898,9 @@ class UnifiedRepository {
     final result = <AnimeSource>[];
 
     for (final source in sources) {
-      final key = _normalizeTitle(source.voiceover.title);
+      // Include sourceType in key so voiceovers with same name from different
+      // providers are both shown (e.g., "анидуб" from anilibria vs animevost).
+      final key = '${source.sourceType}:${_normalizeTitle(source.voiceover.title)}';
       if (seen.add(key.isEmpty ? source.id : key)) {
         result.add(source);
       }
