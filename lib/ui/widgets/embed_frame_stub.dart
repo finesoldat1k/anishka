@@ -1,9 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 
-/// Native platforms cannot embed an arbitrary provider page.
+/// Platforms without an in-app WebView cannot render provider embeds.
 ///
-/// The player screen handles this case by offering an external-open action,
-/// so this widget is only a safety net.
+/// The player screen checks [isEmbedSupported] and resolves a direct stream
+/// instead, so this widget is only a safety net.
+bool get isEmbedSupported => false;
+
 Widget buildEmbedFrame(String url, {String title = ''}) {
   return const SizedBox.shrink();
 }

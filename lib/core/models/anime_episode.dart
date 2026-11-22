@@ -21,6 +21,7 @@ class AnimeEpisode {
     this.resolverId,
     this.embedUrl,
     this.embedLabel,
+    this.streamHeaders = const {},
   });
 
   final String id;
@@ -50,6 +51,9 @@ class AnimeEpisode {
   final String? embedUrl;
   final String? embedLabel;
 
+  /// Headers required by direct CDN URLs (Referer/Origin/User-Agent).
+  final Map<String, String> streamHeaders;
+
   factory AnimeEpisode.fromJson(Map<String, dynamic> json) {
     final opening = asMap(json['opening']);
     final ending = asMap(json['ending']);
@@ -73,6 +77,14 @@ class AnimeEpisode {
       resolverId: asString(json['resolver_id']),
       embedUrl: asString(json['embed_url']),
       embedLabel: asString(json['embed_label']),
+      streamHeaders: _stringMap(json['stream_headers']),
+    );
+  }
+
+  static Map<String, String> _stringMap(Object? value) {
+    if (value is! Map) return const {};
+    return value.map(
+      (key, item) => MapEntry(key.toString(), item.toString()),
     );
   }
 
@@ -89,7 +101,12 @@ class AnimeEpisode {
   bool get hasStream =>
       streamUrl != null || canResolve || (embedUrl?.isNotEmpty ?? false);
 
-  AnimeEpisode copyWith({String? hls480, String? hls720, String? hls1080}) {
+  AnimeEpisode copyWith({
+    String? hls480,
+    String? hls720,
+    String? hls1080,
+    Map<String, String>? streamHeaders,
+  }) {
     return AnimeEpisode(
       id: id,
       ordinal: ordinal,
@@ -108,6 +125,7 @@ class AnimeEpisode {
       resolverId: resolverId,
       embedUrl: embedUrl,
       embedLabel: embedLabel,
+      streamHeaders: streamHeaders ?? this.streamHeaders,
     );
   }
 
@@ -152,5 +170,6 @@ class AnimeEpisode {
     'resolver_id': resolverId,
     'embed_url': embedUrl,
     'embed_label': embedLabel,
+    if (streamHeaders.isNotEmpty) 'stream_headers': streamHeaders,
   };
 }

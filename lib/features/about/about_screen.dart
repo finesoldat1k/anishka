@@ -462,7 +462,7 @@ class _Panel extends StatelessWidget {
                   ),
                 ),
               ),
-              if (action != null) action!,
+              ...action != null ? [action!] : [],
             ],
           ),
           const SizedBox(height: 13),
@@ -521,8 +521,11 @@ class _ServicesTab extends StatelessWidget {
             roles: const {
               'anilibria': 'основная студия, HLS серии, множественные озвучки',
               'yani': 'агрегатор студий, серии, треки',
-              'animevost': 'дополнительные серии (place holder)',
-              'anidub': 'дополнительные серии (place holder)',
+              'kodik': 'озвучки kodik, прямые hls-потоки',
+              'hdrezka': 'озвучки hdrezka, серии и фильмы',
+              'animevost': 'озвучка animevost, mp4 серии',
+              'sameband': 'озвучка sameband, hls серии',
+              'anilibme': 'озвучка animelib, mp4 и kodik',
             },
           ),
           const SizedBox(height: 18),
@@ -706,7 +709,8 @@ class _ServiceTile extends StatelessWidget {
               child: Switch.adaptive(
                 value: value,
                 onChanged: onChanged,
-                activeColor: AppColors.planned,
+                activeThumbColor: AppColors.planned,
+                activeTrackColor: AppColors.planned.withValues(alpha: 0.5),
                 inactiveTrackColor: AppColors.surface.withValues(alpha: 0.5),
                 inactiveThumbColor: AppColors.textFaint,
               ),
@@ -856,7 +860,8 @@ class _ImagesTab extends StatelessWidget {
                     child: Switch.adaptive(
                       value: proxyEnabled,
                       onChanged: onProxyToggle,
-                      activeColor: AppColors.planned,
+                      activeThumbColor: AppColors.planned,
+                      activeTrackColor: AppColors.planned.withValues(alpha: 0.5),
                     ),
                   ),
                 ),
@@ -1232,9 +1237,12 @@ class _PriorityTab extends StatelessWidget {
                 ),
                 _PurposeRow(
                   purpose: 'озвучка и серии',
-                  recommended: 'anilibria / yani / animevost / sameband / yummyanime / anilibme',
-                  current: 'anilibria → yani → animevost → sameband → yummyanime → anilibme',
-                  description: 'AniLibria — лучшее качество HLS, Yani — агрегатор, AnimeVost/SameBand/Yummy/AnilibMe — API',
+                  recommended:
+                      'anilibria / yani / kodik / hdrezka / animevost / sameband / anilibme',
+                  current:
+                      'anilibria → yani → kodik → hdrezka → animevost → sameband → anilibme',
+                  description:
+                      'AniLibria — лучшее качество HLS, Yani — агрегатор, Kodik/HDRezka — крупные библиотеки озвучек, AnimeVost/SameBand/AnilibMe — прямые API',
                 ),
               ],
             ),
@@ -1269,23 +1277,21 @@ class _PriorityListState extends State<_PriorityList> {
     _providers = List.from(widget.providers);
   }
 
-  void _onReorder(int oldIndex, int newIndex) {
-    setState(() {
-      if (newIndex > oldIndex) {
-        newIndex -= 1;
-      }
-      final item = _providers.removeAt(oldIndex);
-      _providers.insert(newIndex, item);
-    });
-    widget.onReorder(oldIndex, newIndex);
-  }
-
   @override
   Widget build(BuildContext context) {
     return ReorderableListView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      onReorder: _onReorder,
+      onReorderItem: (oldIndex, newIndex) {
+        setState(() {
+          if (newIndex > oldIndex) {
+            newIndex -= 1;
+          }
+          final item = _providers.removeAt(oldIndex);
+          _providers.insert(newIndex, item);
+        });
+        widget.onReorder(oldIndex, newIndex);
+      },
       children: _providers.asMap().entries.map((entry) {
         final index = entry.key;
         final p = entry.value;
@@ -1500,14 +1506,19 @@ class _AboutTab extends StatelessWidget {
                   url: 'https://animevost.org',
                 ),
                 _SourceRow(
+                  name: 'kodik',
+                  role: 'озвучки Kodik, прямые HLS-потоки',
+                  url: 'https://kodik.info',
+                ),
+                _SourceRow(
+                  name: 'hdrezka',
+                  role: 'озвучки HDRezka, серии и фильмы',
+                  url: 'https://hdrezka-home.tv',
+                ),
+                _SourceRow(
                   name: 'sameband',
                   role: 'озвучка SameBand Studio',
                   url: 'https://sameband.studio',
-                ),
-                _SourceRow(
-                  name: 'yummyanime',
-                  role: 'озвучка Yummy Anime',
-                  url: 'https://site.yummyani.me',
                 ),
                 _SourceRow(
                   name: 'anilibme',

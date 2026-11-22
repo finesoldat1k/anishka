@@ -43,7 +43,7 @@ class AppImage extends StatelessWidget {
         ? _ImageFallback(label: fallbackLabel)
         : kIsWeb
         ? _WebImage(
-            url: effectiveUrl!,
+            url: effectiveUrl,
             fit: fit,
             alignment: alignment,
             width: width,
@@ -51,7 +51,7 @@ class AppImage extends StatelessWidget {
             fallbackLabel: fallbackLabel,
           )
         : CachedNetworkImage(
-            imageUrl: effectiveUrl!,
+            imageUrl: effectiveUrl,
             fit: fit,
             alignment: alignment,
             width: width,

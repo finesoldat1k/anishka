@@ -1,9 +1,32 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-/// Builds a WebView-based embed frame for native platforms (Android, iOS, Linux, macOS, Windows).
+/// In-app WebView support. `webview_flutter` ships implementations for
+/// Android, iOS and macOS only; Linux and Windows fall back to direct
+/// stream resolution.
+bool get isEmbedSupported {
+  if (kIsWeb) return true;
+  return defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.macOS;
+}
+
+/// Builds a WebView-based embed frame for supported native platforms.
 Widget buildEmbedFrame(String url, {String title = ''}) {
   if (url.trim().isEmpty) return const SizedBox.shrink();
+  if (!isEmbedSupported) {
+    return const ColoredBox(
+      color: Color(0xFF000000),
+      child: Center(
+        child: Text(
+          'встроенный плеер недоступен на этой платформе',
+          style: TextStyle(color: Colors.white70),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
 
   return _EmbedFrameWebView(url: url, title: title);
 }
@@ -31,10 +54,14 @@ class _EmbedFrameWebViewState extends State<_EmbedFrameWebView> {
       ..setBackgroundColor(const Color(0xFF000000))
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (_) => setState(() => _loading = true),
-          onPageFinished: (_) => setState(() => _loading = false),
+          onPageStarted: (_) {
+            if (mounted) setState(() => _loading = true);
+          },
+          onPageFinished: (_) {
+            if (mounted) setState(() => _loading = false);
+          },
           onWebResourceError: (error) {
-            // Ignore errors, let the WebView handle them
+            // Ignore errors, let the WebView handle them.
           },
         ),
       )

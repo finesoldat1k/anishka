@@ -7,13 +7,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/metadata/shikimori.dart';
 import '../api/service_registry.dart';
-import '../api/sources/anidub.dart';
 import '../api/sources/anilibme.dart';
 import '../api/sources/anilibria.dart';
 import '../api/sources/animevost.dart';
+import '../api/sources/embed/aksor_resolver.dart';
+import '../api/sources/embed/alloha_resolver.dart';
+import '../api/sources/embed/aniboom_resolver.dart';
+import '../api/sources/embed/cdnvideohub_resolver.dart';
+import '../api/sources/embed/embed_resolver.dart';
+import '../api/sources/embed/kodik_resolver.dart';
+import '../api/sources/embed/sibnet_resolver.dart';
+import '../api/sources/hdrezka.dart';
+import '../api/sources/kodik.dart';
+import '../api/sources/resolved_stream.dart';
 import '../api/sources/sameband.dart';
 import '../api/sources/yani.dart' as yani_src;
-import '../api/sources/yummyanime.dart';
 import '../cache/cache_service.dart';
 import '../cache/persistent_cache.dart';
 import '../cache/unified_cache.dart' hide CacheStats;
@@ -57,7 +65,15 @@ class AppServices extends ChangeNotifier {
     required SharedPreferences prefs,
   })  : _settings = ServiceSettingsStore(prefs),
         _cache = UnifiedCache(),
-        _persistent = PersistentCache(prefs) {
+        _persistent = PersistentCache(prefs),
+        _embedResolvers = EmbedResolverRegistry([
+          KodikResolver(),
+          AniboomResolver(),
+          SibnetResolver(),
+          CdnVideoHubResolver(),
+          AksorResolver(),
+          AllohaResolver(),
+        ]) {
     _cache.usePersistent(_persistent);
     _rebuildRegistry();
     _settings.addListener(_onSettingsChanged);
@@ -66,9 +82,10 @@ class AppServices extends ChangeNotifier {
   final ServiceSettingsStore _settings;
   final UnifiedCache _cache;
   final PersistentCache _persistent;
+  final EmbedResolverRegistry _embedResolvers;
 
   ApiServiceRegistry _registry = _emptyRegistry();
-  late final UnifiedRepository _repository;
+  late UnifiedRepository _repository;
 
   static ApiServiceRegistry _emptyRegistry() => ApiServiceRegistry(
         metadata: MetadataProviderRegistry.create(
@@ -198,41 +215,102 @@ class AppServices extends ChangeNotifier {
 
   // ============ stream resolution ============
 
-  /// Resolve an episode stream URL. Tries direct URLs first, then the
-  /// registered source provider (single interface), then a legacy fallback.
-  Future<String?> resolveStream(AnimeEpisode episode, {String quality = 'auto'}) async {
+  /// Resolve an episode stream URL (URL-only convenience wrapper).
+  Future<String?> resolveStream(
+    AnimeEpisode episode, {
+    String quality = 'auto',
+  }) async {
+    final stream = await resolveStreamDetailed(episode, quality: quality);
+    return stream?.url;
+  }
+
+  /// Resolve an episode to a direct stream with playback headers.
+  ///
+  /// Order:
+  /// 1. Direct HLS/MP4 URL already attached to the episode.
+  /// 2. Embed resolver registered for `resolverSource` (Kodik, Aniboom, ...).
+  /// 3. Source provider implementing [StreamResolvableSourceProvider]
+  ///    (HDRezka and Kodik's lazy API).
+  /// 4. Embed resolver matched by URL (`resolverId`/`embedUrl`).
+  Future<ResolvedStream?> resolveStreamDetailed(
+    AnimeEpisode episode, {
+    String quality = 'auto',
+  }) async {
     final direct = episode.hlsForQuality(quality) ?? episode.streamUrl;
-    if (direct != null && direct.isNotEmpty) return direct;
+    if (direct != null && direct.isNotEmpty) {
+      return ResolvedStream(
+        url: direct,
+        headers: episode.streamHeaders,
+        kind: StreamKind.fromUrl(direct),
+      );
+    }
     if (!episode.canResolve) return null;
 
-    final cacheKey = 'stream:${episode.resolverSource}:${episode.resolverId}:$quality';
-    final cached = _cache.get<String>(cacheKey);
+    final resolverSource = episode.resolverSource!;
+    final resolverId = episode.resolverId!;
+    final embedUrl = episode.embedUrl?.trim() ?? '';
+
+    final cacheKey = CacheKeys.resolvedStreamDetail(
+      resolverSource,
+      resolverId,
+      quality,
+    );
+    final cached = _cache.get<ResolvedStream>(cacheKey);
     if (cached != null) return cached;
 
-    String? url;
-    try {
-      // Single-interface path: ask the owning source provider for the source.
-      final provider = _registry.getSourceProvider(episode.resolverSource!);
-      if (provider != null) {
-        final source = await provider
-            .getSource(episode.resolverId!)
-            .timeout(const Duration(seconds: 10));
-        if (source != null) {
-          final match = source.episodes.firstWhere(
-            (e) => e.ordinal == episode.ordinal,
-            orElse: () => source.episodes.first,
-          );
-          url = match.hlsForQuality(quality);
-        }
+    ResolvedStream? stream;
+
+    // 1. Dedicated embed resolver (Kodik, Aniboom, Sibnet, CVH, Aksor).
+    final embedResolver = _embedResolvers.byId(resolverSource);
+    if (embedResolver != null) {
+      stream = await _safeResolve(
+        () => embedResolver.resolve(resolverId, quality: quality),
+      );
+      if (stream == null && embedUrl.isNotEmpty) {
+        stream = await _safeResolve(
+          () => embedResolver.resolve(embedUrl, quality: quality),
+        );
       }
-    } catch (_) {
-      // No legacy fallback — sources provide their own streams.
     }
 
-    if (url != null && url.isNotEmpty) {
-      _cache.set(cacheKey, url, ttl: const Duration(hours: 1));
+    // 2. Provider-level lazy resolution (HDRezka).
+    if (stream == null) {
+      final provider = _registry.getSourceProvider(resolverSource);
+      if (provider is StreamResolvableSourceProvider) {
+        stream = await _safeResolve(
+          () => (provider as StreamResolvableSourceProvider).resolveStream(
+            resolverId,
+            ordinal: episode.ordinal,
+            quality: quality,
+          ),
+        );
+      }
     }
-    return url;
+
+    // 3. Match a resolver by the URL itself.
+    stream ??= await _safeResolve(
+      () => _embedResolvers.resolve(resolverId, quality: quality),
+    );
+    if (stream == null && embedUrl.isNotEmpty) {
+      stream = await _safeResolve(
+        () => _embedResolvers.resolve(embedUrl, quality: quality),
+      );
+    }
+
+    if (stream != null && stream.isPlayable) {
+      _cache.set(cacheKey, stream, ttl: const Duration(hours: 1));
+    }
+    return stream;
+  }
+
+  Future<ResolvedStream?> _safeResolve(
+    Future<ResolvedStream?> Function() action,
+  ) async {
+    try {
+      return await action().timeout(const Duration(seconds: 20));
+    } catch (_) {
+      return null;
+    }
   }
 
   // ============ internals ============
@@ -257,7 +335,7 @@ class AppServices extends ChangeNotifier {
     _repository = UnifiedRepository(
       registry: _registry,
       cache: _cache,
-      streamResolver: _resolveStream,
+      streamResolverDetailed: _resolveStreamDetailed,
     );
   }
 
@@ -276,25 +354,24 @@ class AppServices extends ChangeNotifier {
     return [
       AniLibria(),
       yani_src.Yani(),
+      Kodik(),
+      HDRezka(),
       AnimeVost(),
       SameBand(),
-      YummyAnime(),
       AnilibMe(),
-      AniDub(),
     ];
   }
 
-  Future<String?> _resolveStream(
+  Future<ResolvedStream?> _resolveStreamDetailed(
     AnimeEpisode episode, {
     required String quality,
-  }) async {
-    return resolveStream(episode, quality: quality);
+  }) {
+    return resolveStreamDetailed(episode, quality: quality);
   }
 
   @override
   void dispose() {
+    _settings.removeListener(_onSettingsChanged);
     super.dispose();
   }
 }
-
-

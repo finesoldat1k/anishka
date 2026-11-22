@@ -1,7 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../../core/models/anime_episode.dart';
-import '../../../core/models/anime_release.dart';
 import '../../../core/models/anime_source.dart';
 import '../../../core/models/shikimori_anime.dart';
 import '../../../core/theme/app_colors.dart';

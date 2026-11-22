@@ -11,7 +11,6 @@ import '../../../core/utils/format.dart';
 import '../../../ui/icons/app_icons.dart';
 import '../../../ui/widgets/app_image.dart';
 import '../../../ui/widgets/gradient_button.dart';
-import '../../../ui/widgets/trailer_view.dart';
 
 /// Cinematic details hero.
 ///
@@ -70,20 +69,20 @@ class DetailsHero extends StatelessWidget {
     final statusLabel = shikimori.statusLabel;
     final kindLabel = shikimori.kindLabel;
     final score = shikimori.scoreValue;
-    final year = shikimori.year;
+    final int? year = shikimori.year;
     final episodeCount = shikimori.episodeCount;
     final ageRating = shikimori.rating;
     final poster = shikimori.posterOriginalUrl ?? shikimori.posterUrl;
     final background = shikimori.backgroundUrl ?? shikimori.metadataBackground;
 
     final meta = <String>[
-      if (year != null) '$year',
+      year?.toString() ?? '',
       if (kindLabel.isNotEmpty) kindLabel,
-      if (episodeCount != null && episodeCount > 0)
+      if (episodeCount > 0)
         episodesLabel(episodeCount),
       if (score != null) formatScore(score),
       if (ageRating != null && ageRating.isNotEmpty) ageRating,
-    ].join('  ·  ');
+    ].where((s) => s.isNotEmpty).join('  ·  ');
 
     final playButton = GradientButton(
       label: 'воспроизвести',

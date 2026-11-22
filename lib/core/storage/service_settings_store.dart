@@ -12,6 +12,16 @@ class ServiceSettingsStore extends ChangeNotifier {
 
   static const _metadataKey = 'enabled_metadata_providers';
   static const _sourcesKey = 'enabled_source_providers';
+  static const _sourcesVersionKey = 'enabled_source_providers_version';
+
+  /// Bump when the set of source providers changes.
+  static const _sourcesVersion = 2;
+
+  /// Providers that no longer exist; dropped from saved settings on upgrade.
+  static const _removedSources = <String>{'anidub', 'yummyanime'};
+
+  /// Providers added after v1; enabled for existing users on upgrade.
+  static const _addedSources = <String>{'kodik', 'hdrezka'};
 
   /// Default enabled providers (all by default).
   static const defaultMetadata = <String>{
@@ -19,11 +29,11 @@ class ServiceSettingsStore extends ChangeNotifier {
   };
   static const defaultSources = <String>{
     'anilibria',
-    'animevost',
-    'anidub',
     'yani',
+    'kodik',
+    'hdrezka',
+    'animevost',
     'sameband',
-    'yummyanime',
     'anilibme',
   };
 
@@ -35,10 +45,24 @@ class ServiceSettingsStore extends ChangeNotifier {
   }
 
   /// Get enabled source provider IDs.
+  ///
+  /// Saved settings are migrated in place when the provider set changes:
+  /// removed providers are dropped and new ones are enabled.
   Set<String> getEnabledSources() {
     final list = _prefs.getStringList(_sourcesKey);
     if (list == null) return defaultSources;
-    return list.toSet();
+
+    final current = list.toSet();
+    final version = _prefs.getInt(_sourcesVersionKey) ?? 1;
+    if (version >= _sourcesVersion) return current;
+
+    current.removeAll(_removedSources);
+    // Do not resurrect providers for users who disabled everything.
+    if (current.isNotEmpty) current.addAll(_addedSources);
+
+    _prefs.setStringList(_sourcesKey, current.toList());
+    _prefs.setInt(_sourcesVersionKey, _sourcesVersion);
+    return current;
   }
 
   /// Set enabled metadata provider IDs.
@@ -50,6 +74,7 @@ class ServiceSettingsStore extends ChangeNotifier {
   /// Set enabled source provider IDs.
   Future<void> setEnabledSources(Set<String> ids) async {
     await _prefs.setStringList(_sourcesKey, ids.toList());
+    await _prefs.setInt(_sourcesVersionKey, _sourcesVersion);
     notifyListeners();
   }
 
@@ -79,6 +104,7 @@ class ServiceSettingsStore extends ChangeNotifier {
   Future<void> reset() async {
     await _prefs.remove(_metadataKey);
     await _prefs.remove(_sourcesKey);
+    await _prefs.remove(_sourcesVersionKey);
     notifyListeners();
   }
 }

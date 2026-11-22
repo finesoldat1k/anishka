@@ -258,9 +258,19 @@ class CacheKeys {
   static String animeWithSources(int shikimoriId) =>
       'unified:anime:$shikimoriId';
 
+  static String sourcesByShikimori(int shikimoriId) =>
+      'unified:sources:$shikimoriId';
+
   // Resolved streams
   static String resolvedStream(String resolverSource, String resolverId, String quality) =>
       'stream:$resolverSource:$resolverId:$quality';
+
+  static String resolvedStreamDetail(
+    String resolverSource,
+    String resolverId,
+    String quality,
+  ) =>
+      'stream:detail:$resolverSource:$resolverId:$quality';
 }
 
 /// Global cache instance.

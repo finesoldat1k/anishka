@@ -115,6 +115,7 @@ class UnifiedEpisode {
     this.embedLabel,
     this.resolverSource,
     this.resolverId,
+    this.streamHeaders = const {},
   });
 
   /// Unique episode identifier
@@ -150,6 +151,9 @@ class UnifiedEpisode {
   /// For resolved streams (aksor, kodik, etc.)
   final String? resolverSource;
   final String? resolverId;
+
+  /// Headers required by direct CDN URLs (Referer/Origin/User-Agent).
+  final Map<String, String> streamHeaders;
 
   /// Get best available stream URL for quality
   String? hlsForQuality(String quality) {
@@ -189,6 +193,7 @@ class UnifiedEpisode {
     String? embedLabel,
     String? resolverSource,
     String? resolverId,
+    Map<String, String>? streamHeaders,
   }) {
     return UnifiedEpisode(
       id: id ?? this.id,
@@ -207,6 +212,7 @@ class UnifiedEpisode {
       embedLabel: embedLabel ?? this.embedLabel,
       resolverSource: resolverSource ?? this.resolverSource,
       resolverId: resolverId ?? this.resolverId,
+      streamHeaders: streamHeaders ?? this.streamHeaders,
     );
   }
 
@@ -229,6 +235,7 @@ class UnifiedEpisode {
         if (embedLabel != null) 'embedLabel': embedLabel,
         if (resolverSource != null) 'resolverSource': resolverSource,
         if (resolverId != null) 'resolverId': resolverId,
+        if (streamHeaders.isNotEmpty) 'streamHeaders': streamHeaders,
       };
 
   factory UnifiedEpisode.fromJson(Map<String, dynamic> json) {
@@ -249,6 +256,14 @@ class UnifiedEpisode {
       embedLabel: json['embedLabel'] as String?,
       resolverSource: json['resolverSource'] as String?,
       resolverId: json['resolverId'] as String?,
+      streamHeaders: _stringMap(json['streamHeaders']),
+    );
+  }
+
+  static Map<String, String> _stringMap(Object? value) {
+    if (value is! Map) return const {};
+    return value.map(
+      (key, item) => MapEntry(key.toString(), item.toString()),
     );
   }
 }

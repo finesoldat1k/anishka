@@ -1,5 +1,4 @@
 // Image proxy configuration for CORS-blocked images.
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Configuration for image proxy services.
 class ImageProxyConfig {

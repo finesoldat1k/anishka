@@ -43,7 +43,6 @@ class PersistentCache {
   final SharedPreferences _prefs;
 
   static const String _prefix = 'anishka_cache:';
-  static const int _maxSizeBytes = 5 * 1024 * 1024; // ~5 MB cap
 
   String _key(String key) => '$_prefix$key';
 

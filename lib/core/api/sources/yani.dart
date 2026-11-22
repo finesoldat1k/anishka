@@ -6,7 +6,7 @@ import '../yani_models.dart';
 import 'source_provider.dart';
 import 'unified_source.dart';
 
-/// YummyAnime source provider — provides studio tracks, episodes, Aksor resolution for video playback.
+/// Yani source provider (YummyAnime API) — provides studio tracks, episodes, Aksor resolution for video playback.
 class Yani implements SourceProvider {
   Yani({Dio? dio})
       : _dio =
@@ -26,7 +26,7 @@ class Yani implements SourceProvider {
   final Dio _dio;
 
   @override
-  String get displayName => 'yummyanime';
+  String get displayName => 'yani';
 
   @override
   String get id => 'yani';
@@ -139,10 +139,9 @@ class Yani implements SourceProvider {
         if (options.isEmpty) continue;
         final embed = _bestEmbed(options);
         if (embed == null) continue;
-        final aksorOptions = options
-            .where((video) => video.player.toLowerCase().contains('aksor'))
-            .toList();
-        final aksor = aksorOptions.isEmpty ? null : aksorOptions.first;
+        final embedUrl = embed.iframeUrl;
+        if (embedUrl.isEmpty) continue;
+        final resolverKind = _resolverKind(embedUrl);
         for (final option in options) {
           final label = _playerLabel(option.player);
           if (label.isNotEmpty) players.add(label);
@@ -161,14 +160,10 @@ class Yani implements SourceProvider {
             openingStop: embed.openingStop,
             endingStart: embed.endingStart,
             endingStop: embed.endingStop,
-            embedUrl: embed.iframeUrl,
+            embedUrl: embedUrl,
             embedLabel: _playerLabel(embed.player),
-            resolverSource: embed.iframeUrl == null ? null : 'aksor',
-            resolverId: aksor == null
-                ? null
-                : (aksor.iframeUrl == null
-                    ? null
-                    : _aksorVideoId(aksor.iframeUrl)),
+            resolverSource: resolverKind,
+            resolverId: resolverKind == null ? null : embedUrl,
           ),
         );
       }
@@ -202,6 +197,9 @@ class Yani implements SourceProvider {
   YaniVideo? _bestEmbed(List<YaniVideo> options) {
     final sorted = [...options]
       ..sort((a, b) {
+        final byResolver = _resolverRank(a.iframeUrl)
+            .compareTo(_resolverRank(b.iframeUrl));
+        if (byResolver != 0) return byResolver;
         final byPlayer = _playerRank(a.player).compareTo(_playerRank(b.player));
         if (byPlayer != 0) return byPlayer;
         return a.ordinal.compareTo(b.ordinal);
@@ -307,11 +305,26 @@ class Yani implements SourceProvider {
     return value;
   }
 
-  static String? _aksorVideoId(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null || !uri.host.toLowerCase().contains('aksor')) return null;
-    if (uri.pathSegments.isEmpty) return null;
-    return uri.pathSegments.last;
+  static int _resolverRank(String? url) {
+    return _resolverKind(url) == null ? 10 : 0;
+  }
+
+  /// Map an embed URL to the resolver registered in the app.
+  static String? _resolverKind(String? url) {
+    final value = url?.trim() ?? '';
+    if (value.isEmpty) return null;
+    final host = Uri.tryParse(value)?.host.toLowerCase() ?? '';
+    if (host.contains('kodik') || host.contains('anivod') || host.contains('aniqit')) {
+      return 'kodik';
+    }
+    if (host.contains('aniboom')) return 'aniboom';
+    if (host.contains('sibnet')) return 'sibnet';
+    if (host.contains('cdnvideohub') || host.contains('animego')) {
+      return 'cdnvideohub';
+    }
+    if (host.contains('aksor')) return 'aksor';
+    if (host.contains('alloha')) return 'alloha';
+    return null;
   }
 
   static int _playerRank(String player) {
@@ -322,13 +335,6 @@ class Yani implements SourceProvider {
     if (value.contains('cvh') || value.contains('cdnvideohub')) return 3;
     return 5;
   }
-
-  static List<String> _qualityKeys(String quality) => switch (quality) {
-    '1080' => const ['q1080', 'q720', 'q480', 'q360'],
-    '720' => const ['q720', 'q1080', 'q480', 'q360'],
-    '480' => const ['q480', 'q720', 'q360', 'q1080'],
-    _ => const ['q1080', 'q720', 'q480', 'q360', 'q2k', 'q4k'],
-  };
 
   static List<Map<String, dynamic>> _responseList(dynamic data) {
     final value = data is Map ? data['response'] : data;
@@ -343,27 +349,4 @@ class Yani implements SourceProvider {
     if (value is! Map) return null;
     return value.map((key, value) => MapEntry(key.toString(), value));
   }
-
-  static int? _skipStop(Map<dynamic, dynamic> skip) {
-    final start = _asInt(skip['time']);
-    final length = _asInt(skip['length']);
-    if (start == null || length == null) return null;
-    return start + length;
-  }
-
-  static int? _asInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse('\${value ?? ''}');
-  }
-
-  static String? _normalizeUrl(dynamic raw) {
-    final value = raw is String ? raw.trim() : '';
-    if (value.isEmpty) return null;
-    if (value.startsWith('//')) return 'https:\$value';
-    if (value.startsWith('http://') || value.startsWith('https://')) return value;
-    return null;
-  }
-
-  
 }

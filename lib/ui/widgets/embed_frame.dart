@@ -5,15 +5,21 @@ import 'embed_frame_stub.dart'
     if (dart.library.io) 'embed_frame_native.dart'
     as impl;
 
-/// A provider player rendered inside an `<iframe>` on web, or WebView on native.
+/// A provider player rendered inside an `<iframe>` on web, or WebView on
+/// supported native platforms (Android, iOS, macOS).
 ///
 /// Studios from YummyAnime (Kodik, Alloha, Aksor, CVH, ...) only expose an
-/// embed URL. On native platforms we use WebView to keep playback in-app.
+/// embed URL. When [isEmbedSupported] is true the player keeps playback
+/// in-app; on desktop Linux/Windows the player resolves a direct stream
+/// instead.
 class EmbedFrame extends StatelessWidget {
   const EmbedFrame({super.key, required this.url, this.title = ''});
 
   final String url;
   final String title;
+
+  /// Whether this platform can render provider embeds in-app.
+  static bool get isEmbedSupported => impl.isEmbedSupported;
 
   @override
   Widget build(BuildContext context) {

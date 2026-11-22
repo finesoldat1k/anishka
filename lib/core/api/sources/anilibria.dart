@@ -110,7 +110,6 @@ class AniLibria implements SourceProvider {
     }
   }
 
-  @override
   Future<List<dynamic>> getFranchises(int releaseId) async {
     try {
       final data = await _get('/anime/franchises/release/$releaseId');

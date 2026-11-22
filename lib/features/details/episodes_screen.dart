@@ -14,7 +14,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/errors.dart';
 import '../../core/utils/format.dart';
 import '../../core/utils/layout.dart';
-import '../../ui/widgets/app_image.dart';
 import '../../ui/widgets/skeleton.dart';
 import '../../ui/widgets/source_note.dart';
 import '../../ui/widgets/state_views.dart';

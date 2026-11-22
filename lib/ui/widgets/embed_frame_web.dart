@@ -5,6 +5,9 @@ import 'package:material_ui/material_ui.dart';
 
 final Map<String, String> _registeredViews = {};
 
+/// Browsers render provider embeds in a sandboxed iframe.
+bool get isEmbedSupported => true;
+
 /// Registers a platform view once per embed URL and returns its iframe.
 Widget buildEmbedFrame(String url, {String title = ''}) {
   final viewType = _registeredViews.putIfAbsent(url, () {

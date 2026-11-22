@@ -5,15 +5,12 @@
 // fault-tolerant: a dead or slow source never blocks the page, results are
 // cached in memory + disk (offline-first), and transient failures are
 // retried with short, bounded timeouts.
-library core.repository.unified_repository;
 
 import 'dart:async';
 
 import '../api/metadata/shikimori.dart';
-import '../api/metadata/unified_metadata.dart';
 import '../api/service_registry.dart';
-import '../api/sources/anilibria.dart';
-import '../api/sources/unified_source.dart';
+import '../api/sources/resolved_stream.dart';
 import '../api/sources/yani.dart' as yani_src;
 import '../cache/unified_cache.dart';
 import '../models/anime_episode.dart';
@@ -24,8 +21,6 @@ import '../models/shikimori_anime.dart';
 import '../models/voiceover.dart';
 
 /// TTL constants.
-const _popularTtl = Duration(minutes: 10);
-const _searchTtl = Duration(minutes: 5);
 const _detailsTtl = Duration(minutes: 30);
 const _metadataTtl = Duration(minutes: 15);
 const _sourcesTtl = Duration(minutes: 15);
@@ -36,13 +31,11 @@ const _franchiseTtl = Duration(hours: 12);  // Franchise relations rarely change
 /// Unified repository using the provider architecture.
 class UnifiedRepository {
   UnifiedRepository({
-    required ApiServiceRegistry registry,
-    required UnifiedCache cache,
-    Future<String?> Function(AnimeEpisode, {required String quality})?
-        streamResolver,
-  })  : _registry = registry,
-        _cache = cache,
-        _streamResolver = streamResolver;
+    required this._registry,
+    required this._cache,
+    this._streamResolver,
+    this._streamResolverDetailed,
+  });
 
   final ApiServiceRegistry _registry;
   final UnifiedCache _cache;
@@ -50,6 +43,12 @@ class UnifiedRepository {
   /// Resolve an episode stream URL (injected by [AppServices]).
   final Future<String?> Function(AnimeEpisode, {required String quality})?
       _streamResolver;
+
+  /// Resolve an episode stream with playback headers (injected by [AppServices]).
+  final Future<ResolvedStream?> Function(
+    AnimeEpisode, {
+    required String quality,
+  })? _streamResolverDetailed;
 
   // ============ retry / timeout helpers ============
 
@@ -313,7 +312,7 @@ class UnifiedRepository {
           decoder: (json) => UnifiedMetadata.fromJson(json as Map<String, dynamic>),
           encoder: (value) => value.toJson(),
         );
-        if (result != null && result.title.isNotEmpty) return result;
+        if (result.title.isNotEmpty) return result;
       } catch (_) {}
     }
 
@@ -531,7 +530,7 @@ class UnifiedRepository {
     bool refresh = false,
     String? nameHint,
   }) async {
-    final cacheKey = CacheKeys.animeWithSources(shikimoriId);
+    final cacheKey = CacheKeys.sourcesByShikimori(shikimoriId);
     if (!refresh && _cache.hasFresh(cacheKey)) {
       final cached = _cache.get<List<UnifiedSource>>(cacheKey);
       if (cached != null) return cached;
@@ -546,78 +545,176 @@ class UnifiedRepository {
     int shikimoriId, {
     String? nameHint,
   }) async {
-    // Load all providers in parallel for better performance
-    final futures = <Future<List<UnifiedSource>>>[];
+    final base = await _safe<UnifiedMetadata>(
+      () => getBaseDetails(shikimoriId, titleHint: nameHint),
+    );
 
-    // 1. AniLibria (highest priority)
-    final anilibria = _registry.getSourceProvider('anilibria') as AniLibria?;
-    if (anilibria != null) {
-      futures.add(_withRetry(
-        () => anilibria.findByShikimoriId(shikimoriId, nameHint: nameHint),
-        attempts: 2,
-        timeout: const Duration(seconds: 8),
-      ).onError((_, __) => <UnifiedSource>[]));
+    final queries = <String>[];
+    void addQuery(String? value) {
+      final text = value?.trim() ?? '';
+      if (text.isEmpty) return;
+      if (queries.any((item) => item.toLowerCase() == text.toLowerCase())) {
+        return;
+      }
+      queries.add(text);
     }
 
-    // 2. Yani studio tracks
-    final yaniSource = _registry.getSourceProvider('yani');
-    if (yaniSource != null) {
-      futures.add(_safe<List<UnifiedSource>>(() async {
-        final base = await getBaseDetails(shikimoriId);
-        if (base == null) return <UnifiedSource>[];
-        final queries = _buildSearchQueries(base);
-        final fetched = await (yaniSource as yani_src.Yani)
-            .findSources(shikimoriId, queries: queries);
-        return fetched ?? <UnifiedSource>[];
-      }, onError: <UnifiedSource>[]).then((r) => r ?? <UnifiedSource>[]));
-    }
-
-    // 3. Additional sources (AnimeVost, SameBand, YummyAnime, AnilibMe, AniDub) - search by title
-    final base = await getBaseDetails(shikimoriId);
-    final searchQuery = base?.title ?? '';
-    if (searchQuery.isNotEmpty) {
-      final additionalProviders = _registry.enabledSources
-          .where((p) => p.id != 'anilibria' && p.id != 'yani')
-          .toList();
-
-      for (final provider in additionalProviders) {
-        futures.add(_safe<List<UnifiedSource>>(() async {
-          final results = await provider.search(searchQuery);
-          final matched = _filterByShikimoriMatch(results, shikimoriId, base);
-          return matched != null ? [matched] : <UnifiedSource>[];
-        }, onError: <UnifiedSource>[]).then((r) => r ?? <UnifiedSource>[]));
+    if (base != null) {
+      for (final query in _buildSearchQueries(base)) {
+        addQuery(query);
       }
     }
+    addQuery(nameHint);
 
-    // Wait for all providers in parallel
+    final providers = _registry.enabledSources;
+    final futures = <Future<List<UnifiedSource>>>[];
+    for (final provider in providers) {
+      futures.add(
+        _safe<List<UnifiedSource>>(
+          () => _loadFromProvider(provider, shikimoriId, base, queries),
+          onError: const <UnifiedSource>[],
+        ).then((result) => result ?? const <UnifiedSource>[]),
+      );
+    }
+
     final results = await Future.wait(futures);
     final allSources = <UnifiedSource>[];
     for (final sources in results) {
       allSources.addAll(sources);
     }
 
-    // Sort by priority
     allSources.sort((a, b) => _sourcePriority(a.providerId)
         .compareTo(_sourcePriority(b.providerId)));
     return allSources;
   }
 
-  UnifiedSource? _filterByShikimoriMatch(
-    List<UnifiedSource> sources,
+  Future<List<UnifiedSource>> _loadFromProvider(
+    SourceProvider provider,
     int shikimoriId,
     UnifiedMetadata? base,
+    List<String> queries,
+  ) async {
+    // Yani keeps a dedicated lookup: its API indexes Shikimori ids and groups
+    // videos by studio, which the generic provider contract cannot express.
+    if (provider is yani_src.Yani) {
+      final fetched = await provider
+          .findSources(shikimoriId, queries: queries)
+          .timeout(const Duration(seconds: 20));
+      return fetched ?? const [];
+    }
+
+    final hint = base?.title ?? (queries.isEmpty ? null : queries.first);
+
+    // 1. Preferred path: provider knows how to map a Shikimori id.
+    try {
+      final found = await provider
+          .findByShikimoriId(shikimoriId, nameHint: hint)
+          .timeout(const Duration(seconds: 20));
+      final usable = await _expandSources(provider, found);
+      if (usable.isNotEmpty) return usable;
+    } catch (_) {
+      // Fall back to title search.
+    }
+
+    // 2. Title search fallback for providers without Shikimori mapping.
+    for (final query in queries.take(3)) {
+      try {
+        final results = await provider
+            .search(query)
+            .timeout(const Duration(seconds: 15));
+        final best = _bestTitleMatch(results, query, base);
+        if (best == null) continue;
+        final expanded = await _expandSource(provider, best);
+        if (expanded != null && expanded.episodes.isNotEmpty) {
+          return [expanded];
+        }
+      } catch (_) {
+        // Try the next title variant.
+      }
+    }
+    return const [];
+  }
+
+  Future<List<UnifiedSource>> _expandSources(
+    SourceProvider provider,
+    List<UnifiedSource> sources,
+  ) async {
+    final result = <UnifiedSource>[];
+    for (final source in sources) {
+      final expanded = await _expandSource(provider, source);
+      if (expanded != null && expanded.episodes.isNotEmpty) {
+        result.add(expanded);
+      }
+    }
+    return result;
+  }
+
+  Future<UnifiedSource?> _expandSource(
+    SourceProvider provider,
+    UnifiedSource source,
+  ) async {
+    if (source.episodes.isNotEmpty) return source;
+    try {
+      final full = await provider
+          .getSource(source.id)
+          .timeout(const Duration(seconds: 20));
+      if (full != null) return full;
+    } catch (_) {
+      // Keep the lightweight search result.
+    }
+    return source;
+  }
+
+  UnifiedSource? _bestTitleMatch(
+    List<UnifiedSource> sources,
+    String query,
+    UnifiedMetadata? base,
   ) {
-    // Approximate matching: return the first source as fallback.
-    return sources.isNotEmpty ? sources.first : null;
+    if (sources.isEmpty) return null;
+    final targets = <String>[
+      if (base != null) ...[
+        base.title,
+        if (base.englishTitle != null) base.englishTitle!,
+        if (base.japaneseTitle != null) base.japaneseTitle!,
+      ],
+      query,
+    ].map(_normalizeTitle).where((item) => item.isNotEmpty).toSet().toList();
+
+    UnifiedSource? best;
+    var bestScore = 0;
+    for (final source in sources) {
+      final title = _normalizeTitle(source.title);
+      if (title.isEmpty) continue;
+      for (final target in targets) {
+        var score = 0;
+        if (title == target) {
+          score = 100;
+        } else if (title.contains(target) || target.contains(title)) {
+          score = 60;
+        } else {
+          final left = title.split(' ').toSet();
+          final right = target.split(' ').toSet();
+          score = left.intersection(right).length * 10;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          best = source;
+        }
+      }
+    }
+    if (bestScore <= 0) return null;
+    return best;
   }
 
   int _sourcePriority(String providerId) {
     return switch (providerId) {
       'anilibria' => 0,
       'yani' => 1,
-      'animevost' => 2,
-      'anidub' => 3,
-      'kodik' => 4,
+      'kodik' => 2,
+      'hdrezka' => 3,
+      'animevost' => 4,
+      'sameband' => 5,
+      'anilibme' => 6,
       _ => 9,
     };
   }
@@ -842,33 +939,71 @@ class UnifiedRepository {
 
   /// Resolve an episode stream URL via the injected resolver.
   Future<String?> resolveStream(AnimeEpisode episode, {String quality = 'auto'}) async {
+    final stream = await resolveStreamDetailed(episode, quality: quality);
+    return stream?.url;
+  }
+
+  /// Resolve an episode to a direct stream including playback headers.
+  Future<ResolvedStream?> resolveStreamDetailed(
+    AnimeEpisode episode, {
+    String quality = 'auto',
+  }) async {
     final direct = episode.hlsForQuality(quality) ?? episode.streamUrl;
-    if (direct != null && direct.isNotEmpty) return direct;
+    if (direct != null && direct.isNotEmpty) {
+      return ResolvedStream(
+        url: direct,
+        headers: episode.streamHeaders,
+        kind: StreamKind.fromUrl(direct),
+      );
+    }
     if (!episode.canResolve) return null;
 
-    final cacheKey = CacheKeys.resolvedStream(
+    final cacheKey = CacheKeys.resolvedStreamDetail(
       episode.resolverSource!,
       episode.resolverId!,
       quality,
     );
 
-    final cached = _cache.get<String>(cacheKey);
+    final cached = _cache.get<ResolvedStream>(cacheKey);
     if (cached != null) return cached;
 
-    String? url;
-    if (_streamResolver != null) {
+    ResolvedStream? stream;
+    if (_streamResolverDetailed != null) {
       try {
-        url = await _streamResolver(episode, quality: quality)
-            .timeout(const Duration(seconds: 10));
+        stream = await _streamResolverDetailed(episode, quality: quality)
+            .timeout(const Duration(seconds: 20));
       } catch (_) {
-        url = null;
+        stream = null;
+      }
+    } else if (_streamResolver != null) {
+      try {
+        final url = await _streamResolver(episode, quality: quality)
+            .timeout(const Duration(seconds: 20));
+        if (url != null && url.isNotEmpty) {
+          stream = ResolvedStream(
+            url: url,
+            headers: episode.streamHeaders,
+            kind: StreamKind.fromUrl(url),
+          );
+        }
+      } catch (_) {
+        stream = null;
       }
     }
 
-    if (url != null && url.isNotEmpty) {
-      _cache.set(cacheKey, url, ttl: const Duration(hours: 1));
+    if (stream != null && stream.isPlayable) {
+      _cache.set(cacheKey, stream, ttl: const Duration(hours: 1));
+      _cache.set(
+        CacheKeys.resolvedStream(
+          episode.resolverSource!,
+          episode.resolverId!,
+          quality,
+        ),
+        stream.url,
+        ttl: const Duration(hours: 1),
+      );
     }
-    return url;
+    return stream;
   }
 
   // ============ legacy compatibility (AniLibria release flow) ============
@@ -922,6 +1057,7 @@ class UnifiedRepository {
               resolverId: e.resolverId,
               embedUrl: e.embedUrl,
               embedLabel: e.embedLabel,
+              streamHeaders: e.streamHeaders,
             ))
         .toList()
       ..sort((a, b) => a.ordinal.compareTo(b.ordinal));
@@ -1058,6 +1194,7 @@ class UnifiedRepository {
       resolverId: e.resolverId,
       embedUrl: e.embedUrl,
       embedLabel: e.embedLabel,
+      streamHeaders: e.streamHeaders,
     );
   }
 }

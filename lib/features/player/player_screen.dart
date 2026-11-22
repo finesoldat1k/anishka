@@ -11,6 +11,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api/sources/resolved_stream.dart';
 import '../../core/models/anime_episode.dart';
 import '../../core/models/anime_release.dart';
 import '../../core/models/anime_source.dart';
@@ -74,7 +75,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _hideTimer;
 
   String _quality = '1080';
-  final Map<String, String> _resolvedStreams = {};
+  final Map<String, ResolvedStream> _resolvedStreams = {};
+  bool _embedFallback = false;
   double _volume = 100;
   double _lastVolume = 80;
   double _rate = 1;
@@ -102,21 +104,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _release?.episodes.where((episode) => episode.hasStream).toList() ??
       const [];
 
+  String _streamKey(AnimeEpisode episode, String quality) =>
+      '${episode.id}::$quality';
+
+  /// Whether this platform can render the provider player in-app.
+  bool _canEmbed(AnimeEpisode episode) =>
+      EmbedFrame.isEmbedSupported &&
+      episode.embedUrl?.trim().isNotEmpty == true;
+
   /// Providers that expose only an embed player cannot be fed to media_kit.
   ///
   /// On web the iframe is the primary path (these players send no CORS
-  /// headers). On native platforms only a direct resolver (Aksor) can be used;
-  /// otherwise the player offers an external-open action.
-  bool _hasDirectSource(AnimeEpisode episode) {
-    if (episode.streamUrl != null) return true;
-    if (episode.canResolve) return !kIsWeb;
-    return false;
+  /// headers). On native platforms a direct resolver is tried first; the
+  /// embed is used when no resolver exists or resolution fails.
+  bool _preferEmbed(AnimeEpisode episode) {
+    if (episode.streamUrl != null) return false;
+    if (!_canEmbed(episode)) return false;
+    if (kIsWeb) return true;
+    return !episode.canResolve;
   }
 
-  bool _useEmbedFor(AnimeEpisode episode) =>
-      episode.embedUrl?.isNotEmpty == true && !_hasDirectSource(episode);
-
-  bool get _isEmbedPlayback => _episode != null && _useEmbedFor(_episode!);
+  bool get _isEmbedPlayback =>
+      _embedFallback &&
+      EmbedFrame.isEmbedSupported &&
+      _episode?.embedUrl?.trim().isNotEmpty == true;
 
   AnimeEpisode? get _previousEpisode {
     final items = _playableEpisodes;
@@ -382,28 +393,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     String? quality,
     bool autoplay = true,
   }) async {
-    if (_useEmbedFor(episode)) {
-      final player = _player;
-      if (player != null) await player.pause();
-      if (!mounted) return;
-      setState(() {
-        _episode = episode;
-        _voice = voice;
-        _playerError = null;
-        _errorDetails = null;
-        _buffering = false;
-        _completed = false;
-        _playing = false;
-        _controlsVisible = true;
-        _quality = episode.embedLabel ?? 'embed';
-      });
-      _position.value = Duration.zero;
-      _duration.value = episode.duration ?? Duration.zero;
-      _library.saveProgress(
-        releaseId: widget.releaseId,
-        episode: episode.ordinal,
-        voice: voice.id,
-      );
+    if (_preferEmbed(episode)) {
+      await _startEmbed(episode, voice);
       return;
     }
 
@@ -419,18 +410,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     final desired = quality ?? _quality;
     final resolved = qualities.contains(desired) ? desired : qualities.first;
-    var url = episode.hlsForQuality(resolved) ?? _resolvedStreams[episode.id];
-    if (url == null || url.isEmpty) {
+
+    ResolvedStream? stream;
+    final direct = episode.hlsForQuality(resolved);
+    if (direct != null && direct.isNotEmpty) {
+      stream = ResolvedStream(
+        url: direct,
+        headers: episode.streamHeaders,
+        kind: StreamKind.fromUrl(direct),
+      );
+    } else {
+      stream = _resolvedStreams[_streamKey(episode, resolved)];
+    }
+
+    if (stream == null) {
       setState(() {
         _episode = episode;
         _voice = voice;
         _quality = resolved;
+        _embedFallback = false;
         _completed = false;
         _playerError = null;
         _errorDetails = null;
         _buffering = true;
       });
       if (!episode.canResolve) {
+        if (_canEmbed(episode)) {
+          await _startEmbed(episode, voice);
+          return;
+        }
         setState(() {
           _playerError = 'у этой серии нет доступного источника видео.';
           _errorDetails = null;
@@ -438,9 +446,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
         });
         return;
       }
-      url = await _repository.resolveEpisodeStream(episode, quality: resolved);
+      stream = await _repository.resolveStreamDetailed(
+        episode,
+        quality: resolved,
+      );
       if (!mounted) return;
-      if (url == null || url.isEmpty) {
+      if (stream == null || !stream.isPlayable) {
+        // Resolution failed: keep playback in-app via the embed player when
+        // the platform supports it.
+        if (_canEmbed(episode)) {
+          await _startEmbed(episode, voice);
+          return;
+        }
         setState(() {
           _playerError = 'не удалось получить ссылку на видео.';
           _errorDetails = 'источник ${episode.resolverSource} не ответил.';
@@ -448,13 +465,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
         });
         return;
       }
-      _resolvedStreams[episode.id] = url;
+      _resolvedStreams[_streamKey(episode, resolved)] = stream;
     }
 
     setState(() {
       _episode = episode;
       _voice = voice;
       _quality = resolved;
+      _embedFallback = false;
       _completed = false;
       _playerError = null;
       _errorDetails = null;
@@ -467,7 +485,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     try {
       final player = _ensurePlayer();
-      await player.open(Media(url), play: autoplay);
+      await player.open(
+        Media(stream.url, httpHeaders: stream.headers),
+        play: autoplay,
+      );
       if (!mounted) return;
       _library.saveProgress(
         releaseId: widget.releaseId,
@@ -484,6 +505,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _buffering = false;
       });
     }
+  }
+
+  /// Keep playback in-app using the provider's embedded player.
+  Future<void> _startEmbed(AnimeEpisode episode, VoiceoverInfo voice) async {
+    final player = _player;
+    if (player != null) await player.pause();
+    if (!mounted) return;
+    setState(() {
+      _episode = episode;
+      _voice = voice;
+      _embedFallback = true;
+      _playerError = null;
+      _errorDetails = null;
+      _buffering = false;
+      _completed = false;
+      _playing = false;
+      _controlsVisible = true;
+      _quality = episode.embedLabel ?? 'embed';
+    });
+    _position.value = Duration.zero;
+    _duration.value = episode.duration ?? Duration.zero;
+    _library.saveProgress(
+      releaseId: widget.releaseId,
+      episode: episode.ordinal,
+      voice: voice.id,
+    );
   }
 
   AnimeEpisode? _firstPlayable(AnimeRelease release) {
@@ -511,11 +558,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (episode == null || quality == _quality) return;
     final position = _position.value;
     final wasPlaying = _playing;
-    final voice = _voice;
-    if (voice == null) return;
 
-    final url = episode.hlsForQuality(quality);
-    if (url == null) return;
+    ResolvedStream? stream;
+    final direct = episode.hlsForQuality(quality);
+    if (direct != null && direct.isNotEmpty) {
+      stream = ResolvedStream(
+        url: direct,
+        headers: episode.streamHeaders,
+        kind: StreamKind.fromUrl(direct),
+      );
+    } else {
+      stream = _resolvedStreams[_streamKey(episode, quality)];
+    }
+
+    if (stream == null) {
+      if (!episode.canResolve) return;
+      stream = await _repository.resolveStreamDetailed(
+        episode,
+        quality: quality,
+      );
+      if (!mounted) return;
+      if (stream == null || !stream.isPlayable) {
+        setState(() {
+          _playerError = 'не удалось переключить качество.';
+          _errorDetails = 'источник ${episode.resolverSource} не ответил.';
+        });
+        return;
+      }
+      _resolvedStreams[_streamKey(episode, quality)] = stream;
+    }
 
     setState(() {
       _quality = quality;
@@ -525,7 +596,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     try {
       final player = _ensurePlayer();
-      await player.open(Media(url), play: wasPlaying);
+      await player.open(
+        Media(stream.url, httpHeaders: stream.headers),
+        play: wasPlaying,
+      );
       if (position > Duration.zero) {
         await player.seek(position);
       }
@@ -545,7 +619,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final episode = _episode;
     final voice = _voice;
     if (episode == null || voice == null) return;
-    _resolvedStreams.remove(episode.id);
+    _resolvedStreams.removeWhere(
+      (key, _) => key.startsWith('${episode.id}::'),
+    );
+    _embedFallback = false;
     await _startPlayback(episode, voice, quality: _quality);
   }
 
@@ -845,7 +922,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         playerLabel: embedEpisode.embedLabel ?? '',
         embedUrl: embedEpisode.embedUrl!,
         onBack: _goBack,
-        onOpenExternal: () => unawaited(_openExternal()),
         onEpisodes: _openEpisodePicker,
       );
     }
@@ -896,6 +972,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   onPlay: _togglePlay,
                   onReplay: _replay,
                   onRetry: _retryPlayback,
+                  onExternal: !EmbedFrame.isEmbedSupported &&
+                          episode?.embedUrl?.isNotEmpty == true
+                      ? () => unawaited(_openExternal())
+                      : null,
                   onNext: _nextEpisode == null
                       ? null
                       : () => unawaited(_playEpisode(_nextEpisode!)),
@@ -987,7 +1067,6 @@ class _EmbedPlayerScaffold extends StatelessWidget {
     required this.playerLabel,
     required this.embedUrl,
     required this.onBack,
-    required this.onOpenExternal,
     required this.onEpisodes,
   });
 
@@ -996,7 +1075,6 @@ class _EmbedPlayerScaffold extends StatelessWidget {
   final String playerLabel;
   final String embedUrl;
   final VoidCallback onBack;
-  final VoidCallback onOpenExternal;
   final VoidCallback onEpisodes;
 
   @override
@@ -1065,14 +1143,6 @@ class _EmbedPlayerScaffold extends StatelessWidget {
                         compact: compact,
                       ),
                     ],
-                    const SizedBox(width: 8),
-                    _IconButton(
-                      icon: AppIcons.arrowSquareOut,
-                      tooltip: 'открыть во внешнем плеере',
-                      compact: compact,
-                      subtle: true,
-                      onTap: onOpenExternal,
-                    ),
                     const SizedBox(width: 8),
                     _IconButton(
                       icon: AppIcons.filmStrip,
@@ -1736,6 +1806,7 @@ class _CenterOverlay extends StatelessWidget {
     required this.onNext,
     required this.onPickEpisode,
     required this.nextLabel,
+    this.onExternal,
   });
 
   final bool playing;
@@ -1750,6 +1821,7 @@ class _CenterOverlay extends StatelessWidget {
   final VoidCallback? onNext;
   final VoidCallback onPickEpisode;
   final String? nextLabel;
+  final VoidCallback? onExternal;
 
   @override
   Widget build(BuildContext context) {
@@ -1774,6 +1846,14 @@ class _CenterOverlay extends StatelessWidget {
             onTap: onPickEpisode,
             height: 44,
           ),
+          if (onExternal != null)
+            GradientButton(
+              label: 'открыть в браузере',
+              icon: AppIcons.arrowSquareOut,
+              ghost: true,
+              onTap: onExternal!,
+              height: 44,
+            ),
         ],
       );
     }

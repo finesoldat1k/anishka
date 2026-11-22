@@ -1,4 +1,5 @@
 // Core interfaces for video source providers (streaming, episodes, playback).
+import 'resolved_stream.dart';
 import 'unified_source.dart';
 
 /// Common interface for all video source providers.
@@ -20,6 +21,19 @@ abstract interface class SourceProvider {
 
   /// Search sources by query.
   Future<List<UnifiedSource>> search(String query);
+}
+
+/// Optional capability for providers that resolve streams lazily.
+///
+/// Implemented by scraped sources (HDRezka, Kodik, ...) where episode URLs are
+/// signed and only valid for a short time. [sourceId] is the provider-specific
+/// resolver payload stored on the episode, not the source id.
+abstract interface class StreamResolvableSourceProvider {
+  Future<ResolvedStream?> resolveStream(
+    String sourceId, {
+    int? ordinal,
+    String quality = 'auto',
+  });
 }
 
 /// Registry to manage enabled/disabled source providers with priority ordering.
