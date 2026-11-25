@@ -1,7 +1,7 @@
-import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:web/web.dart' as web;
 
 final Map<String, String> _registeredViews = {};
 
@@ -23,7 +23,7 @@ Widget buildTrailerView(String youtubeId, {bool ambient = true}) {
   final viewType = _registeredViews.putIfAbsent(key, () {
     final type = 'anishka-trailer-$key';
     ui_web.platformViewRegistry.registerViewFactory(type, (viewId) {
-      final frame = html.IFrameElement()
+      final frame = web.HTMLIFrameElement()
         ..src = embedUrl
         ..style.border = 'none'
         ..style.width = '100%'

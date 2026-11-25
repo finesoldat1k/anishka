@@ -105,17 +105,12 @@ class _GradientButtonState extends State<GradientButton>
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
     final tone = _toneColor;
-    final useTone = widget.active || _hovered;
     final primary = widget.primary && !widget.ghost;
 
-    final foreground = primary
-        ? (useTone && widget.active
-              ? AppColors.background
-              : AppColors.background)
-        : useTone
-        ? tone
+    final foreground = primary || widget.active
+        ? AppColors.background
         : AppColors.text;
-    final iconColor = primary ? AppColors.background : foreground;
+    final iconColor = foreground;
 
     final content = Row(
       mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
@@ -143,20 +138,38 @@ class _GradientButtonState extends State<GradientButton>
       ],
     );
 
+    // Opaque fills only. Hover lightens the surface a little, press darkens
+    // it — the button never fades out while it is interactive.
+    final Color base;
+    if (primary) {
+      base = _hovered ? const Color(0xFFE4E4E7) : AppColors.text;
+    } else if (widget.active) {
+      base = _hovered
+          ? Color.alphaBlend(Colors.white.withValues(alpha: 0.08), tone)
+          : tone;
+    } else {
+      base = _hovered
+          ? Color.alphaBlend(
+              tone.withValues(alpha: 0.14),
+              AppColors.surfaceHigh,
+            )
+          : AppColors.surfaceHigh;
+    }
+    final background = _pressed
+        ? Color.alphaBlend(
+            Colors.black.withValues(alpha: primary ? 0.16 : 0.12),
+            base,
+          )
+        : base;
+
     final decoration = BoxDecoration(
-      color: primary
-          ? (useTone ? const Color(0xFFE4E4E7) : AppColors.text)
-          : widget.active
-          ? tone // Fully opaque when active
-          : _hovered
-          ? tone.withValues(alpha: 0.15)
-          : AppColors.surfaceHigh,
+      color: background,
       borderRadius: BorderRadius.circular(14),
       border: Border.all(
         color: widget.active
-            ? tone.withValues(alpha: 0.8)
+            ? tone
             : _hovered
-            ? tone.withValues(alpha: 0.5)
+            ? tone.withValues(alpha: 0.45)
             : AppColors.borderStrong,
       ),
       boxShadow: primary && _hovered

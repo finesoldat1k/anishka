@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:anishka/ui/icons/app_icons.dart';
 
+import '../../../core/models/anime_release.dart';
 import '../../../core/storage/library_store.dart';
 import '../../../core/utils/format.dart';
 import '../../../ui/widgets/anime_card.dart';
@@ -21,7 +22,7 @@ class LibraryView extends StatelessWidget {
 
   final HomeTab tab;
   final List<LibraryEntry> entries;
-  final void Function(dynamic anime) onOpen;
+  final void Function(AnimeRelease anime) onOpen;
   final VoidCallback onBrowse;
   final bool grid;
 

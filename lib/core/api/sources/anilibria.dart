@@ -97,7 +97,10 @@ class AniLibria implements SourceProvider {
 
   @override
   Future<UnifiedSource?> getSource(String sourceId) async {
-    final id = int.tryParse(sourceId);
+    // Source ids are namespaced (`anilibria:8789`), but older callers may
+    // still pass the bare numeric release id.
+    final match = RegExp(r'(\d+)\s*$').firstMatch(sourceId.trim());
+    final id = match == null ? null : int.tryParse(match.group(1)!);
     if (id == null) return null;
     try {
       final data = await _get('/anime/releases/$id');

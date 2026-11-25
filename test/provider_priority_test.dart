@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:anishka/core/api/metadata/metadata_provider.dart' hide MetadataProviderRegistry;
+import 'package:anishka/core/api/metadata/metadata_provider.dart';
 import 'package:anishka/core/api/metadata/unified_metadata.dart';
-import 'package:anishka/core/api/service_registry.dart' show MetadataProviderRegistry, SourceProviderRegistry;
 import 'package:anishka/core/api/sources/source_provider.dart';
 import 'package:anishka/core/api/sources/unified_source.dart';
 
@@ -116,6 +115,32 @@ void main() {
 
       final enabled = registry.enabled.map((p) => p.id).toList();
       expect(enabled, ['b', 'c', 'a']);
+    });
+
+    test('enable, disable and health reports keep priority consistent', () {
+      final providerA = _MockProvider('a');
+      final providerB = _MockProvider('b');
+
+      final registry = MetadataProviderRegistry.create(
+        providers: [providerA, providerB],
+        enabledIds: {'a'},
+      );
+
+      expect(registry.enabled.map((p) => p.id), ['a']);
+      expect(registry.getById('missing'), isNull);
+
+      registry.enable('b');
+      expect(registry.enabled.map((p) => p.id), ['a', 'b']);
+
+      registry.reportSuccess('b');
+      expect(registry.enabled.map((p) => p.id), ['b', 'a']);
+      expect(registry.priorityOf('b'), 0);
+
+      registry.reportFailure('b');
+      expect(registry.enabled.map((p) => p.id), ['a', 'b']);
+
+      registry.disable('a');
+      expect(registry.enabled.map((p) => p.id), ['b']);
     });
   });
 

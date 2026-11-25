@@ -189,11 +189,6 @@ ThemeData buildAppTheme() {
       linearTrackColor: AppColors.surfaceSoft,
       circularTrackColor: AppColors.surfaceSoft,
     ),
-    scrollbarTheme: ScrollbarThemeData(
-      thumbColor: WidgetStatePropertyAll(Colors.white.withValues(alpha: 0.14)),
-      radius: const Radius.circular(8),
-      thickness: const WidgetStatePropertyAll(5),
-    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.surfaceHigh,

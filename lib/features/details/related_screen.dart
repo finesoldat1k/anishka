@@ -4,7 +4,6 @@ import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/anime_card_item.dart';
-import '../../core/models/anime_release.dart';
 import '../../core/models/shikimori_anime.dart';
 import '../../core/repository/unified_repository.dart';
 import '../../core/services/app_services.dart';
@@ -23,7 +22,7 @@ import 'widgets/subpage_header.dart';
 class RelatedArgs {
   const RelatedArgs({required this.items, this.title});
 
-  final List<dynamic> items;
+  final List<ShikimoriAnime> items;
   final String? title;
 }
 
@@ -31,7 +30,7 @@ class RelatedArgs {
 class RelatedScreen extends StatefulWidget {
   const RelatedScreen({super.key, this.items, this.shikimoriId, this.title});
 
-  final List<dynamic>? items;
+  final List<ShikimoriAnime>? items;
   final int? shikimoriId;
   final String? title;
 
@@ -41,7 +40,7 @@ class RelatedScreen extends StatefulWidget {
 
 class _RelatedScreenState extends State<RelatedScreen> {
   late final UnifiedRepository _repository;
-  List<dynamic> _items = const [];
+  List<ShikimoriAnime> _items = const [];
   bool _loading = false;
   String? _error;
   String? _animeTitle;
@@ -85,12 +84,8 @@ class _RelatedScreenState extends State<RelatedScreen> {
     }
   }
 
-  void _open(dynamic anime) {
-    if (anime is AnimeRelease) {
-      context.push('/anime/${anime.id}');
-    } else if (anime is ShikimoriAnime) {
-      context.push('/anime/shikimori/${anime.id}', extra: anime);
-    }
+  void _open(ShikimoriAnime anime) {
+    context.push('/anime/shikimori/${anime.id}', extra: anime);
   }
 
   @override
@@ -198,7 +193,7 @@ class _RelatedListTile extends StatefulWidget {
     required this.compact,
   });
 
-  final dynamic anime; // ShikimoriAnime | AnimeRelease
+  final ShikimoriAnime anime;
   final VoidCallback onTap;
   final bool compact;
 
@@ -229,31 +224,18 @@ class _RelatedListTileState extends State<_RelatedListTile>
 
   void _loadDescription() {
     final anime = widget.anime;
-    String? description;
-    if (anime is ShikimoriAnimeDetails) {
-      description = anime.descriptionText;
-    } else if (anime is AnimeRelease) {
-      description = anime.displayDescription;
-    }
-    final direct = _cleanDescription(description);
-    if (direct != null) {
-      _descriptionSnippet = direct;
-      return;
-    }
-    if (anime is ShikimoriAnime) {
-      context
-          .read<AppServices>()
-          .repository
-          .getShikimoriDetails(anime.id)
-          .then((details) {
-            if (!mounted) return;
-            final cleaned = _cleanDescription(details.descriptionText);
-            if (cleaned != null) {
-              setState(() => _descriptionSnippet = cleaned);
-            }
-          })
-          .catchError((_) {});
-    }
+    context
+        .read<AppServices>()
+        .repository
+        .getShikimoriDetails(anime.id)
+        .then((details) {
+          if (!mounted) return;
+          final cleaned = _cleanDescription(details.descriptionText);
+          if (cleaned != null) {
+            setState(() => _descriptionSnippet = cleaned);
+          }
+        })
+        .catchError((_) {});
   }
 
   static String? _cleanDescription(String? description) {

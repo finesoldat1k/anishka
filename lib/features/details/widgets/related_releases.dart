@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/models/shikimori_anime.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart' show AppFonts;
 import '../../../core/utils/format.dart';
@@ -25,8 +26,8 @@ class RelatedReleases extends StatelessWidget {
     this.loading = false,
   });
 
-  final List<dynamic> items;
-  final void Function(dynamic anime) onOpen;
+  final List<ShikimoriAnime> items;
+  final void Function(ShikimoriAnime anime) onOpen;
   final VoidCallback onViewAll;
   final bool compact;
   final int? shikimoriId;

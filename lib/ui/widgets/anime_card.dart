@@ -18,7 +18,7 @@ class AnimeCard extends StatefulWidget {
     this.dense = false,
   });
 
-  final dynamic anime; // AnimeRelease | ShikimoriAnime | ShikimoriAnimeDetails
+  final Object anime; // AnimeRelease | ShikimoriAnime | ShikimoriAnimeDetails
   final VoidCallback onTap;
   final bool dense;
 
@@ -304,7 +304,7 @@ class _GlassPill extends StatelessWidget {
   }
 }
 
-class SliverAnimeGrid extends StatelessWidget {
+class SliverAnimeGrid<T extends Object> extends StatelessWidget {
   const SliverAnimeGrid({
     super.key,
     required this.items,
@@ -313,8 +313,8 @@ class SliverAnimeGrid extends StatelessWidget {
     this.maxColumns = 8,
   });
 
-  final List<dynamic> items;
-  final void Function(dynamic anime) onTap;
+  final List<T> items;
+  final void Function(T anime) onTap;
   final bool dense;
   final int maxColumns;
 

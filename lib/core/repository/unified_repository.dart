@@ -26,7 +26,7 @@ const _metadataTtl = Duration(minutes: 15);
 const _sourcesTtl = Duration(minutes: 15);
 const _animeWithSourcesTtl = Duration(minutes: 15);
 const _screenshotsTtl = Duration(hours: 6); // Screenshots rarely change
-const _franchiseTtl = Duration(hours: 12);  // Franchise relations rarely change
+const _franchiseTtl = Duration(hours: 12); // Franchise relations rarely change
 
 /// Unified repository using the provider architecture.
 class UnifiedRepository {
@@ -42,13 +42,14 @@ class UnifiedRepository {
 
   /// Resolve an episode stream URL (injected by [AppServices]).
   final Future<String?> Function(AnimeEpisode, {required String quality})?
-      _streamResolver;
+  _streamResolver;
 
   /// Resolve an episode stream with playback headers (injected by [AppServices]).
   final Future<ResolvedStream?> Function(
     AnimeEpisode, {
     required String quality,
-  })? _streamResolverDetailed;
+  })?
+  _streamResolverDetailed;
 
   // ============ retry / timeout helpers ============
 
@@ -86,11 +87,18 @@ class UnifiedRepository {
   Future<List<ShikimoriAnime>> getPopular({
     bool refresh = false,
     int limit = 50,
+    int page = 1,
     String order = 'popularity',
     String? status,
     String? kind,
   }) async {
-    final cacheKey = CacheKeys.shikimoriPopular(order, status, kind, limit);
+    final cacheKey = CacheKeys.shikimoriPopular(
+      order,
+      status,
+      kind,
+      limit,
+      page,
+    );
     if (!refresh && _cache.hasFresh(cacheKey)) {
       final cached = _cache.get<List<ShikimoriAnime>>(cacheKey);
       if (cached != null && cached.isNotEmpty) {
@@ -110,10 +118,15 @@ class UnifiedRepository {
           order,
           status,
           kind,
+          page: page,
         );
         if (list.isNotEmpty) {
           _registry.reportMetadataSuccess(provider.id);
-          _cache.set(cacheKey, list.take(limit).toList(), ttl: const Duration(minutes: 10));
+          _cache.set(
+            cacheKey,
+            list.take(limit).toList(),
+            ttl: const Duration(minutes: 10),
+          );
           return list.take(limit).toList();
         }
       } catch (e) {
@@ -130,12 +143,17 @@ class UnifiedRepository {
     int limit,
     String order,
     String? status,
-    String? kind,
-  ) async {
+    String? kind, {
+    int page = 1,
+  }) async {
     if (provider is Shikimori) {
       final list = await _withRetry(
         () => provider.getPopular(
-          limit: limit, order: order, status: status, kind: kind,
+          limit: limit,
+          page: page,
+          order: order,
+          status: status,
+          kind: kind,
         ),
         attempts: 2,
         timeout: const Duration(seconds: 8),
@@ -183,7 +201,11 @@ class UnifiedRepository {
         );
         if (list.isNotEmpty) {
           _registry.reportMetadataSuccess(provider.id);
-          _cache.set(cacheKey, list.take(limit).toList(), ttl: const Duration(minutes: 5));
+          _cache.set(
+            cacheKey,
+            list.take(limit).toList(),
+            ttl: const Duration(minutes: 5),
+          );
           return list.take(limit).toList();
         }
       } catch (e) {
@@ -210,7 +232,11 @@ class UnifiedRepository {
     bool refresh = false,
     String? titleHint,
   }) async {
-    final base = await getBaseDetails(id, refresh: refresh, titleHint: titleHint);
+    final base = await getBaseDetails(
+      id,
+      refresh: refresh,
+      titleHint: titleHint,
+    );
     if (base == null) {
       throw Exception('Аниме не найдено: $id');
     }
@@ -265,7 +291,8 @@ class UnifiedRepository {
           },
           ttl: _detailsTtl,
           forceRefresh: refresh,
-          decoder: (json) => UnifiedMetadata.fromJson(json as Map<String, dynamic>),
+          decoder: (json) =>
+              UnifiedMetadata.fromJson(json as Map<String, dynamic>),
           encoder: (value) => value.toJson(),
         );
         if (result.shikimoriId > 0) return result;
@@ -278,18 +305,36 @@ class UnifiedRepository {
     //    Shikimori IDs don't map to AniList/Jikan internal IDs, so we search by title.
     final otherProviders = providers.where((p) => p.id != 'shikimori').toList();
     if (titleHint != null && titleHint.isNotEmpty) {
-      final results = await Future.wait(otherProviders.map((p) async {
-        try {
-          final list = await p.search(query: titleHint, limit: 5).timeout(
-                const Duration(seconds: 8),
-              );
-          return list.where((m) => m.title.isNotEmpty).toList();
-        } catch (_) {
-          return <UnifiedMetadata>[];
-        }
-      }));
-      for (final list in results) {
-        if (list.isNotEmpty) return list.first;
+      try {
+        final result = await _cache.getOrLoadPersistent<UnifiedMetadata>(
+          key: CacheKeys.fallbackDetails(shikimoriId),
+          loader: () async {
+            final results = await Future.wait(
+              otherProviders.map((p) async {
+                try {
+                  final list = await p
+                      .search(query: titleHint, limit: 5)
+                      .timeout(const Duration(seconds: 8));
+                  return list.where((m) => m.title.isNotEmpty).toList();
+                } catch (_) {
+                  return <UnifiedMetadata>[];
+                }
+              }),
+            );
+            for (final list in results) {
+              if (list.isNotEmpty) return list.first;
+            }
+            throw Exception('Аниме не найдено: $shikimoriId');
+          },
+          ttl: _detailsTtl,
+          forceRefresh: refresh,
+          decoder: (json) =>
+              UnifiedMetadata.fromJson(json as Map<String, dynamic>),
+          encoder: (value) => value.toJson(),
+        );
+        if (result.title.isNotEmpty) return result;
+      } catch (_) {
+        // Fall through to the provider-specific lookup below.
       }
     }
 
@@ -301,15 +346,16 @@ class UnifiedRepository {
         final result = await _cache.getOrLoadPersistent<UnifiedMetadata>(
           key: cacheKey,
           loader: () async {
-            final byId = await yani.getDetails(shikimoriId).timeout(
-                  const Duration(seconds: 8),
-                );
+            final byId = await yani
+                .getDetails(shikimoriId)
+                .timeout(const Duration(seconds: 8));
             if (byId != null && byId.title.isNotEmpty) return byId;
             throw Exception('Аниме не найдено в Yani: $shikimoriId');
           },
           ttl: _detailsTtl,
           forceRefresh: refresh,
-          decoder: (json) => UnifiedMetadata.fromJson(json as Map<String, dynamic>),
+          decoder: (json) =>
+              UnifiedMetadata.fromJson(json as Map<String, dynamic>),
           encoder: (value) => value.toJson(),
         );
         if (result.title.isNotEmpty) return result;
@@ -398,11 +444,12 @@ class UnifiedRepository {
   Future<UnifiedMetadata> getEnrichedMetadata(
     int shikimoriId, {
     bool refresh = false,
+    UnifiedMetadata? base,
   }) async {
     final cacheKey = CacheKeys.animeMetadata(shikimoriId);
     return _cache.getOrLoadPersistent<UnifiedMetadata>(
       key: cacheKey,
-      loader: () => _buildEnrichedMetadata(shikimoriId),
+      loader: () => _buildEnrichedMetadata(shikimoriId, base: base),
       ttl: _metadataTtl,
       forceRefresh: refresh,
       decoder: (json) => UnifiedMetadata.fromJson(json as Map<String, dynamic>),
@@ -410,8 +457,11 @@ class UnifiedRepository {
     );
   }
 
-  Future<UnifiedMetadata> _buildEnrichedMetadata(int shikimoriId) async {
-    final base = await getBaseDetails(shikimoriId);
+  Future<UnifiedMetadata> _buildEnrichedMetadata(
+    int shikimoriId, {
+    UnifiedMetadata? base,
+  }) async {
+    base ??= await getBaseDetails(shikimoriId);
     if (base == null) {
       throw Exception('Аниме не найдено: $shikimoriId');
     }
@@ -423,9 +473,7 @@ class UnifiedRepository {
     // Parallel enrichment — every provider is best-effort.
     final futures = <Future<UnifiedMetadata?>>[];
     for (final provider in providers) {
-      futures.add(
-        _safe(() => provider.getDetails(shikimoriId)).then((m) => m),
-      );
+      futures.add(_safe(() => provider.getDetails(shikimoriId)).then((m) => m));
     }
 
     final results = await Future.wait(futures);
@@ -438,7 +486,7 @@ class UnifiedRepository {
       base,
       results.whereType<UnifiedMetadata>().toList(),
       screenshots,
-    );
+    ).copyWith(shikimoriId: shikimoriId);
   }
 
   /// Merge metadata from multiple providers into one unified record.
@@ -567,6 +615,9 @@ class UnifiedRepository {
     addQuery(nameHint);
 
     final providers = _registry.enabledSources;
+    final priority = <String, int>{
+      for (final (index, provider) in providers.indexed) provider.id: index,
+    };
     final futures = <Future<List<UnifiedSource>>>[];
     for (final provider in providers) {
       futures.add(
@@ -583,8 +634,13 @@ class UnifiedRepository {
       allSources.addAll(sources);
     }
 
-    allSources.sort((a, b) => _sourcePriority(a.providerId)
-        .compareTo(_sourcePriority(b.providerId)));
+    // Respect the user-defined provider order from the registry instead of a
+    // hard-coded list.
+    allSources.sort(
+      (a, b) => (priority[a.providerId] ?? priority.length).compareTo(
+        priority[b.providerId] ?? priority.length,
+      ),
+    );
     return allSources;
   }
 
@@ -706,22 +762,10 @@ class UnifiedRepository {
     return best;
   }
 
-  int _sourcePriority(String providerId) {
-    return switch (providerId) {
-      'anilibria' => 0,
-      'yani' => 1,
-      'kodik' => 2,
-      'hdrezka' => 3,
-      'animevost' => 4,
-      'sameband' => 5,
-      'anilibme' => 6,
-      _ => 9,
-    };
-  }
-
   /// Get full source details by provider and source ID.
   Future<UnifiedSource?> getSourceDetails(
-    String providerId, String sourceId, {
+    String providerId,
+    String sourceId, {
     bool refresh = false,
   }) async {
     final provider = _registry.getSourceProvider(providerId);
@@ -756,6 +800,7 @@ class UnifiedRepository {
   Future<AnimeWithSources> getAnimeWithSources(
     int shikimoriId, {
     bool refresh = false,
+    String? titleHint,
     void Function(AnimeWithSources partial)? onPartial,
   }) async {
     final cacheKey = CacheKeys.animeWithSources(shikimoriId);
@@ -765,20 +810,29 @@ class UnifiedRepository {
     }
 
     // 1. Base Shikimori details first (fast UI paint).
-    final baseDetails = await getBaseDetails(shikimoriId, refresh: refresh);
+    var baseDetails = await getBaseDetails(
+      shikimoriId,
+      refresh: refresh,
+      titleHint: titleHint,
+    );
     if (baseDetails == null) {
       throw Exception('Anime not found: $shikimoriId');
     }
+    // Fallback providers may only know their internal ID; the route ID is
+    // canonical for navigation and library entries.
+    baseDetails = baseDetails.copyWith(shikimoriId: shikimoriId);
 
-    onPartial?.call(AnimeWithSources(
-      shikimoriAnime: _convertToShikimoriDetails(baseDetails),
-      sources: const [],
-      related: const [],
-    ));
+    onPartial?.call(
+      AnimeWithSources(
+        shikimoriAnime: _convertToShikimoriDetails(baseDetails),
+        sources: const [],
+        related: const [],
+      ),
+    );
 
     // 2. Parallel load: enriched metadata + sources + related.
     final results = await Future.wait([
-      getEnrichedMetadata(shikimoriId, refresh: refresh),
+      getEnrichedMetadata(shikimoriId, refresh: refresh, base: baseDetails),
       findSourcesByShikimoriId(
         shikimoriId,
         refresh: refresh,
@@ -817,7 +871,9 @@ class UnifiedRepository {
         () => getRelatedByFranchise(franchise, limit: 30),
         timeout: const Duration(seconds: 5),
       );
-      final filtered = items.where((anime) => anime.shikimoriId != base.shikimoriId).toList();
+      final filtered = items
+          .where((anime) => anime.shikimoriId != base.shikimoriId)
+          .toList();
       filtered.sort((a, b) {
         final aYear = a.year ?? 9999;
         final bYear = b.year ?? 9999;
@@ -838,9 +894,7 @@ class UnifiedRepository {
     for (final source in sources) {
       if (source.episodes.isEmpty) continue;
 
-      final episodes = source.episodes
-          .map(_convertEpisode)
-          .toList()
+      final episodes = source.episodes.map(_convertEpisode).toList()
         ..sort((a, b) => a.ordinal.compareTo(b.ordinal));
 
       final release = AnimeRelease(
@@ -881,13 +935,15 @@ class UnifiedRepository {
         episodeCount: episodes.length,
       );
 
-      animeSources.add(AnimeSource(
-        id: source.id,
-        shikimoriAnime: shikimori,
-        release: release,
-        voiceover: voiceover,
-        sourceType: source.providerId,
-      ));
+      animeSources.add(
+        AnimeSource(
+          id: source.id,
+          shikimoriAnime: shikimori,
+          release: release,
+          voiceover: voiceover,
+          sourceType: source.providerId,
+        ),
+      );
     }
 
     return animeSources;
@@ -900,15 +956,21 @@ class UnifiedRepository {
     for (final source in sources) {
       // Include sourceType in key so voiceovers with same name from different
       // providers are both shown (e.g., "анидуб" from anilibria vs animevost).
-      final key = '${source.sourceType}:${_normalizeTitle(source.voiceover.title)}';
+      final key =
+          '${source.sourceType}:${_normalizeTitle(source.voiceover.title)}';
       if (seen.add(key.isEmpty ? source.id : key)) {
         result.add(source);
       }
     }
 
+    final priority = <String, int>{
+      for (final (index, provider) in _registry.enabledSources.indexed)
+        provider.id: index,
+    };
     result.sort((a, b) {
-      final byPriority =
-          _sourcePriority(a.sourceType).compareTo(_sourcePriority(b.sourceType));
+      final byPriority = (priority[a.sourceType] ?? priority.length).compareTo(
+        priority[b.sourceType] ?? priority.length,
+      );
       if (byPriority != 0) return byPriority;
       return a.voiceover.title.compareTo(b.voiceover.title);
     });
@@ -940,12 +1002,19 @@ class UnifiedRepository {
   // ============ stream resolution ============
 
   /// Resolve an episode stream URL via the injected resolver.
-  Future<String?> resolveStream(AnimeEpisode episode, {String quality = 'auto'}) async {
+  Future<String?> resolveStream(
+    AnimeEpisode episode, {
+    String quality = 'auto',
+  }) async {
     final stream = await resolveStreamDetailed(episode, quality: quality);
     return stream?.url;
   }
 
   /// Resolve an episode to a direct stream including playback headers.
+  ///
+  /// The heavy lifting (embed resolvers, provider-specific lazy resolution and
+  /// caching) lives in [AppServices]; this method only handles direct episode
+  /// URLs and forwards everything else to the injected resolver.
   Future<ResolvedStream?> resolveStreamDetailed(
     AnimeEpisode episode, {
     String quality = 'auto',
@@ -960,52 +1029,37 @@ class UnifiedRepository {
     }
     if (!episode.canResolve) return null;
 
-    final cacheKey = CacheKeys.resolvedStreamDetail(
-      episode.resolverSource!,
-      episode.resolverId!,
-      quality,
-    );
-
-    final cached = _cache.get<ResolvedStream>(cacheKey);
-    if (cached != null) return cached;
-
-    ResolvedStream? stream;
-    if (_streamResolverDetailed != null) {
+    final detailed = _streamResolverDetailed;
+    if (detailed != null) {
       try {
-        stream = await _streamResolverDetailed(episode, quality: quality)
-            .timeout(const Duration(seconds: 20));
+        return await detailed(
+          episode,
+          quality: quality,
+        ).timeout(const Duration(seconds: 30));
       } catch (_) {
-        stream = null;
+        return null;
       }
-    } else if (_streamResolver != null) {
+    }
+
+    final resolver = _streamResolver;
+    if (resolver != null) {
       try {
-        final url = await _streamResolver(episode, quality: quality)
-            .timeout(const Duration(seconds: 20));
+        final url = await resolver(
+          episode,
+          quality: quality,
+        ).timeout(const Duration(seconds: 30));
         if (url != null && url.isNotEmpty) {
-          stream = ResolvedStream(
+          return ResolvedStream(
             url: url,
             headers: episode.streamHeaders,
             kind: StreamKind.fromUrl(url),
           );
         }
       } catch (_) {
-        stream = null;
+        return null;
       }
     }
-
-    if (stream != null && stream.isPlayable) {
-      _cache.set(cacheKey, stream, ttl: const Duration(hours: 1));
-      _cache.set(
-        CacheKeys.resolvedStream(
-          episode.resolverSource!,
-          episode.resolverId!,
-          quality,
-        ),
-        stream.url,
-        ttl: const Duration(hours: 1),
-      );
-    }
-    return stream;
+    return null;
   }
 
   // ============ legacy compatibility (AniLibria release flow) ============
@@ -1040,29 +1094,32 @@ class UnifiedRepository {
   }
 
   AnimeRelease _animeReleaseFromSource(int id, UnifiedSource source) {
-    final episodes = source.episodes
-        .map((e) => AnimeEpisode(
-              id: e.id,
-              ordinal: e.ordinal,
-              name: e.title,
-              hls480: e.hls480,
-              hls720: e.hls720,
-              hls1080: e.hls1080,
-              durationSeconds: e.duration,
-              previewPath: e.posterUrl,
-              openingStart: e.openingStart,
-              openingStop: e.openingStop,
-              endingStart: e.endingStart,
-              endingStop: e.endingStop,
-              sortOrder: e.ordinal,
-              resolverSource: e.resolverSource,
-              resolverId: e.resolverId,
-              embedUrl: e.embedUrl,
-              embedLabel: e.embedLabel,
-              streamHeaders: e.streamHeaders,
-            ))
-        .toList()
-      ..sort((a, b) => a.ordinal.compareTo(b.ordinal));
+    final episodes =
+        source.episodes
+            .map(
+              (e) => AnimeEpisode(
+                id: e.id,
+                ordinal: e.ordinal,
+                name: e.title,
+                hls480: e.hls480,
+                hls720: e.hls720,
+                hls1080: e.hls1080,
+                durationSeconds: e.duration,
+                previewPath: e.posterUrl,
+                openingStart: e.openingStart,
+                openingStop: e.openingStop,
+                endingStart: e.endingStart,
+                endingStop: e.endingStop,
+                sortOrder: e.ordinal,
+                resolverSource: e.resolverSource,
+                resolverId: e.resolverId,
+                embedUrl: e.embedUrl,
+                embedLabel: e.embedLabel,
+                streamHeaders: e.streamHeaders,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => a.ordinal.compareTo(b.ordinal));
 
     return AnimeRelease(
       id: id,
@@ -1094,16 +1151,6 @@ class UnifiedRepository {
     );
   }
 
-  // ============ legacy compatibility (stream resolution) ============
-
-  /// Resolve an episode stream lazily for scraped sources.
-  Future<String?> resolveEpisodeStream(
-    AnimeEpisode episode, {
-    String quality = 'auto',
-  }) async {
-    return resolveStream(episode, quality: quality);
-  }
-
   // ============ legacy model conversion ============
 
   ShikimoriAnimeDetails _convertToShikimoriDetails(UnifiedMetadata m) {
@@ -1132,8 +1179,12 @@ class UnifiedRepository {
       english: m.englishTitle != null ? [m.englishTitle!] : null,
       japanese: m.japaneseTitle != null ? [m.japaneseTitle!] : null,
       synonyms: null,
-      genres: m.genres.map((g) => ShikimoriGenre(id: g.hashCode, name: g, russian: g)).toList(),
-      studios: m.studios.map((s) => ShikimoriStudio(id: s.hashCode, name: s)).toList(),
+      genres: m.genres
+          .map((g) => ShikimoriGenre(id: g.hashCode, name: g, russian: g))
+          .toList(),
+      studios: m.studios
+          .map((s) => ShikimoriStudio(id: s.hashCode, name: s))
+          .toList(),
       videos: const [],
       trailerUrl: m.trailerUrl,
       trailerThumbnail: m.trailerThumbnail,

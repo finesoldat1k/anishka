@@ -24,8 +24,8 @@ class CacheEntry<T> {
 /// - Cache statistics
 /// - Offline-first persistent layer (disk) for API responses
 class UnifiedCache {
-  final Map<String, CacheEntry<Object>> _cache = {};
-  final Map<String, Completer<Object>> _pending = {};
+  final Map<String, CacheEntry<Object?>> _cache = {};
+  final Map<String, Completer<Object?>> _pending = {};
   final Map<String, int> _hitCount = {};
   final Map<String, int> _missCount = {};
 
@@ -35,55 +35,92 @@ class UnifiedCache {
   /// Attach a persistent cache so API responses survive restarts.
   void usePersistent(PersistentCache cache) => persistent = cache;
 
+  CacheEntry<Object?>? _freshEntry(String key) {
+    final entry = _cache[key];
+    if (entry == null || entry.isExpired) return null;
+    return entry;
+  }
+
+  void _recordHit(String key) {
+    _hitCount[key] = (_hitCount[key] ?? 0) + 1;
+  }
+
+  void _recordMiss(String key) {
+    _missCount[key] = (_missCount[key] ?? 0) + 1;
+  }
+
   /// Get cached value if fresh, otherwise execute [loader].
+  ///
+  /// Concurrent callers share a single in-flight request, including
+  /// [forceRefresh] callers: a refresh storm must not hit the network twice.
   Future<T> getOrLoad<T>(
     String key,
     Future<T> Function() loader, {
     required Duration ttl,
     bool forceRefresh = false,
   }) async {
-    // Return fresh cached value
     if (!forceRefresh) {
-      final entry = _cache[key] as CacheEntry<T>?;
-      if (entry != null && !entry.isExpired) {
-        _hitCount[key] = (_hitCount[key] ?? 0) + 1;
-        return entry.value;
+      final entry = _freshEntry(key);
+      if (entry != null && entry.value is T) {
+        _recordHit(key);
+        return entry.value as T;
       }
     }
 
-    // Return in-flight request if exists
-    if (!forceRefresh) {
-      final pending = _pending[key];
-      if (pending != null) {
-        return pending.future as Future<T>;
-      }
+    final pending = _pending[key];
+    if (pending != null) {
+      return await pending.future as T;
     }
 
-    _missCount[key] = (_missCount[key] ?? 0) + 1;
+    return _load<T>(key, loader, ttl);
+  }
 
-    // Create new request with deduplication
-    final completer = Completer<Object>();
+  Future<T> _load<T>(
+    String key,
+    Future<T> Function() loader,
+    Duration ttl, {
+    Future<void> Function(T value)? persist,
+  }) async {
+    _recordMiss(key);
+
+    final completer = Completer<Object?>();
     _pending[key] = completer;
 
     try {
       final value = await loader();
-      _cache[key] = CacheEntry<T>(value: value, expiresAt: DateTime.now().add(ttl)) as CacheEntry<Object>;
-      completer.complete(value as Object);
+      // Only publish the result if this request is still the current one.
+      // An invalidation or a newer refresh must not be overwritten by a slow
+      // response that started earlier.
+      if (identical(_pending[key], completer)) {
+        _cache[key] = CacheEntry<Object?>(
+          value: value,
+          expiresAt: DateTime.now().add(ttl),
+        );
+        if (persist != null) {
+          try {
+            await persist(value);
+          } catch (_) {
+            // Disk cache is best-effort and must never break the caller.
+          }
+        }
+      }
+      completer.complete(value);
       return value;
-    } catch (e) {
-      completer.completeError(e);
+    } catch (error, stackTrace) {
+      completer.completeError(error, stackTrace);
       rethrow;
     } finally {
-      _pending.remove(key);
+      // A newer request for the same key may have replaced this one.
+      if (identical(_pending[key], completer)) _pending.remove(key);
     }
   }
 
   /// Offline-first variant of [getOrLoad].
   ///
   /// Resolution order:
-  /// 1. Persistent (disk) cache — served immediately when offline.
-  /// 2. In-memory cache (fresh).
-  /// 3. In-flight request (deduplication).
+  /// 1. In-memory cache (fresh).
+  /// 2. In-flight request (deduplication).
+  /// 3. Persistent (disk) cache — served even without network.
   /// 4. [loader] — result written to both memory and persistent cache.
   ///
   /// [encoder] is optional; when provided the value is JSON-encoded before
@@ -96,48 +133,76 @@ class UnifiedCache {
     Object Function(T)? encoder,
     bool forceRefresh = false,
   }) async {
-    // 1. Persistent (offline-first) — served even without network.
-    if (!forceRefresh && persistent != null && decoder != null) {
-      try {
-        final cached = persistent!.read(key, decoder);
-        if (cached != null) {
-          _hitCount[key] = (_hitCount[key] ?? 0) + 1;
-          // Seed memory cache too for fast subsequent reads.
-          _cache[key] = CacheEntry<T>(value: cached, expiresAt: DateTime.now().add(ttl)) as CacheEntry<Object>;
-          return cached;
-        }
-      } catch (_) {
-        // Fall through to network.
+    // 1. Fresh memory value.
+    if (!forceRefresh) {
+      final entry = _freshEntry(key);
+      if (entry != null && entry.value is T) {
+        _recordHit(key);
+        return entry.value as T;
       }
     }
 
-    // 2-4. In-memory / loader path.
-    final value = await getOrLoad(key, loader, ttl: ttl, forceRefresh: forceRefresh);
-
-    // Write through to persistent cache.
-    if (persistent != null && encoder != null) {
-      await persistent!
-          .writeRaw(key, jsonEncode(encoder(value)), ttl)
-          .catchError((_) {});
+    // 2. Join an in-flight request.
+    final pending = _pending[key];
+    if (pending != null) {
+      return await pending.future as T;
     }
 
+    // 3. Persistent (offline-first). Preserve the remaining disk TTL instead
+    //    of extending it to a full [ttl] on every read.
+    if (!forceRefresh && persistent != null && decoder != null) {
+      try {
+        final entry = persistent!.readEntry(key);
+        if (entry != null) {
+          final cached = decoder(jsonDecode(entry.value));
+          _recordHit(key);
+          _cache[key] = CacheEntry<Object?>(
+            value: cached,
+            expiresAt: entry.expiresAt,
+          );
+          return cached;
+        }
+      } catch (_) {
+        // Corrupted or incompatible payload — drop it and load fresh data.
+        try {
+          await persistent!.remove(key);
+        } catch (_) {
+          // Disk cache is best-effort.
+        }
+      }
+    }
+
+    // 4. Load and write through to disk.
+    final persistentCache = persistent;
+    final value = await _load<T>(
+      key,
+      loader,
+      ttl,
+      persist: persistentCache == null || encoder == null
+          ? null
+          : (value) =>
+                persistentCache.writeRaw(key, jsonEncode(encoder(value)), ttl),
+    );
     return value;
   }
 
   /// Get cached value without loading.
   T? get<T>(String key) {
-    final entry = _cache[key] as CacheEntry<T>?;
-    if (entry != null && !entry.isExpired) {
-      _hitCount[key] = (_hitCount[key] ?? 0) + 1;
-      return entry.value;
+    final entry = _freshEntry(key);
+    if (entry != null && entry.value is T) {
+      _recordHit(key);
+      return entry.value as T;
     }
-    _missCount[key] = (_missCount[key] ?? 0) + 1;
+    _recordMiss(key);
     return null;
   }
 
   /// Set cache value directly.
   void set<T>(String key, T value, {required Duration ttl}) {
-    _cache[key] = CacheEntry<T>(value: value, expiresAt: DateTime.now().add(ttl)) as CacheEntry<Object>;
+    _cache[key] = CacheEntry<Object?>(
+      value: value,
+      expiresAt: DateTime.now().add(ttl),
+    );
   }
 
   /// Invalidate a specific key.
@@ -164,10 +229,7 @@ class UnifiedCache {
   }
 
   /// Check if key has fresh cached value.
-  bool hasFresh(String key) {
-    final entry = _cache[key];
-    return entry != null && !entry.isExpired;
-  }
+  bool hasFresh(String key) => _freshEntry(key) != null;
 
   /// Get cache statistics.
   CacheStats getStats() {
@@ -216,34 +278,38 @@ class CacheStats {
 /// Cache key builders for consistent key generation.
 class CacheKeys {
   // Metadata
-  static String shikimoriPopular(String order, String? status, String? kind, int limit) =>
-      'shikimori:popular:$order|${status ?? ''}|${kind ?? ''}|$limit';
+  static String shikimoriPopular(
+    String order,
+    String? status,
+    String? kind,
+    int limit, [
+    int page = 1,
+  ]) => 'shikimori:popular:$order|${status ?? ''}|${kind ?? ''}|$limit|p$page';
 
   static String shikimoriSearch(String query) =>
       'shikimori:search:${query.toLowerCase().trim()}';
 
-  static String shikimoriDetails(int id) =>
-      'shikimori:details:$id';
+  static String shikimoriDetails(int id) => 'shikimori:details:$id';
 
-  static String shikimoriScreenshots(int id) =>
-      'shikimori:screenshots:$id';
+  static String shikimoriScreenshots(int id) => 'shikimori:screenshots:$id';
 
   static String shikimoriFranchise(String franchise, int limit) =>
       'shikimori:franchise:$franchise:$limit';
 
   // Enriched metadata
-  static String animeMetadata(int shikimoriId) =>
-      'metadata:anime:$shikimoriId';
+  static String animeMetadata(int shikimoriId) => 'metadata:anime:$shikimoriId';
 
-  static String yaniDetails(int shikimoriId) =>
-      'yani:details:$shikimoriId';
+  static String yaniDetails(int shikimoriId) => 'yani:details:$shikimoriId';
+
+  /// Base details resolved through a title search when Shikimori is down.
+  static String fallbackDetails(int shikimoriId) =>
+      'metadata:fallback:$shikimoriId';
 
   // Sources
   static String anilibriaReleases(int shikimoriId, String? nameHint) =>
       'anilibria:releases:$shikimoriId:${nameHint ?? ''}';
 
-  static String anilibriaRelease(int id) =>
-      'anilibria:release:$id';
+  static String anilibriaRelease(int id) => 'anilibria:release:$id';
 
   static String yaniBundle(int shikimoriId, List<String> queries) =>
       'yani:bundle:$shikimoriId:${queries.join('|')}';
@@ -262,16 +328,15 @@ class CacheKeys {
       'unified:sources:$shikimoriId';
 
   // Resolved streams
-  static String resolvedStream(String resolverSource, String resolverId, String quality) =>
-      'stream:$resolverSource:$resolverId:$quality';
+  static String resolvedStream(
+    String resolverSource,
+    String resolverId,
+    String quality,
+  ) => 'stream:$resolverSource:$resolverId:$quality';
 
   static String resolvedStreamDetail(
     String resolverSource,
     String resolverId,
     String quality,
-  ) =>
-      'stream:detail:$resolverSource:$resolverId:$quality';
+  ) => 'stream:detail:$resolverSource:$resolverId:$quality';
 }
-
-/// Global cache instance.
-final unifiedCache = UnifiedCache();

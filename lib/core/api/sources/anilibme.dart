@@ -14,7 +14,7 @@ import 'unified_source.dart';
 class AnilibMe implements SourceProvider {
   AnilibMe({Dio? dio}) : _dio = dio ?? _createDio();
 
-  static const apiBase = 'https://api.cdnlibs.org';
+  static const apiBase = 'https://api.cdnlibs.org/api';
   static const _animelibVideoBase =
       'https://video1.cdnlibs.org/.%D0%B0s/';
 
@@ -31,6 +31,8 @@ class AnilibMe implements SourceProvider {
         validateStatus: (status) => status != null && status < 500,
         headers: const {
           'Accept': 'application/json',
+          'Origin': 'https://animelib.org',
+          'Referer': 'https://animelib.org/',
           'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
               '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -123,7 +125,14 @@ class AnilibMe implements SourceProvider {
       final response = await _dio.get<String>(
         path,
         queryParameters: query,
-        options: Options(responseType: ResponseType.plain),
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: const {
+            'Accept': 'application/json',
+            'Origin': 'https://animelib.org',
+            'Referer': 'https://animelib.org/',
+          },
+        ),
       );
       final body = response.data ?? '';
       if (!body.trimLeft().startsWith('{')) return null;

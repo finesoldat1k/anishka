@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../api/json_utils.dart';
 import '../models/anime_release.dart';
 
 enum CollectionStatus {
@@ -68,10 +69,8 @@ class LibraryEntry {
     return LibraryEntry(
       anime: anime,
       status: CollectionStatus.fromStorage(json['status']),
-      favorite: json['favorite'] == true,
-      updatedAt:
-          DateTime.tryParse(json['updated_at']?.toString() ?? '') ??
-          DateTime.now(),
+      favorite: asBool(json['favorite']),
+      updatedAt: asDate(json['updated_at']) ?? DateTime.now(),
     );
   }
 }
@@ -94,16 +93,12 @@ class WatchProgress {
   };
 
   static WatchProgress? fromJson(Map<String, dynamic> json) {
-    final episode = json['episode'];
-    if (episode is! num || episode < 1) return null;
+    final episode = asInt(json['episode']);
+    if (episode == null || episode < 1) return null;
     return WatchProgress(
-      episode: episode.toInt(),
-      voice: (json['voice'] as String?)?.trim().isNotEmpty == true
-          ? json['voice'] as String
-          : 'anilibria',
-      updatedAt:
-          DateTime.tryParse(json['updated_at']?.toString() ?? '') ??
-          DateTime.now(),
+      episode: episode,
+      voice: asString(json['voice']) ?? 'anilibria',
+      updatedAt: asDate(json['updated_at']) ?? DateTime.now(),
     );
   }
 }

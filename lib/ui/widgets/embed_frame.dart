@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'embed_frame_stub.dart'
-    if (dart.library.html) 'embed_frame_web.dart'
+    if (dart.library.js_interop) 'embed_frame_web.dart'
     if (dart.library.io) 'embed_frame_native.dart'
     as impl;
 

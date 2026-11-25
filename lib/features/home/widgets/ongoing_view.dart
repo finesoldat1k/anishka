@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/models/shikimori_anime.dart';
 import '../../../core/repository/unified_repository.dart';
 import '../../../core/services/app_services.dart';
 import '../../../core/theme/app_colors.dart';
@@ -16,7 +17,7 @@ import '../../../ui/widgets/state_views.dart';
 class OngoingView extends StatefulWidget {
   const OngoingView({super.key, required this.onOpen, required this.grid});
 
-  final void Function(dynamic anime) onOpen;
+  final void Function(ShikimoriAnime anime) onOpen;
   final bool grid;
 
   @override
@@ -24,17 +25,38 @@ class OngoingView extends StatefulWidget {
 }
 
 class _OngoingViewState extends State<OngoingView> {
+  static const int _pageSize = 30;
+
   late final UnifiedRepository _repository;
-  final List<dynamic> _items = [];
+  final ScrollController _scrollController = ScrollController();
+  final List<ShikimoriAnime> _items = [];
+  int _page = 1;
   bool _loading = true;
+  bool _loadingMore = false;
   bool _refreshing = false;
+  bool _hasMore = true;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _repository = context.read<AppServices>().repository;
+    _scrollController.addListener(_onScroll);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter > 640) return;
+    _loadMore();
   }
 
   Future<void> _load({bool refresh = false}) async {
@@ -50,7 +72,8 @@ class _OngoingViewState extends State<OngoingView> {
     try {
       final list = await _repository.getPopular(
         refresh: refresh,
-        limit: 42,
+        limit: _pageSize,
+        page: 1,
         status: 'ongoing',
         order: 'popularity',
       );
@@ -59,6 +82,8 @@ class _OngoingViewState extends State<OngoingView> {
         _items
           ..clear()
           ..addAll(list);
+        _page = 1;
+        _hasMore = list.length >= _pageSize;
         _error = null;
       });
     } catch (error) {
@@ -76,6 +101,37 @@ class _OngoingViewState extends State<OngoingView> {
           _refreshing = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _loading || _refreshing || !_hasMore) return;
+    setState(() => _loadingMore = true);
+
+    final nextPage = _page + 1;
+    try {
+      final list = await _repository.getPopular(
+        limit: _pageSize,
+        page: nextPage,
+        status: 'ongoing',
+        order: 'popularity',
+      );
+      if (!mounted) return;
+      final known = _items.map((anime) => anime.id).toSet();
+      final fresh = list.where((anime) => known.add(anime.id)).toList();
+      setState(() {
+        _page = nextPage;
+        _hasMore = list.length >= _pageSize && fresh.isNotEmpty;
+        _items.addAll(fresh);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      // Stop retrying on every scroll tick; pull-to-refresh restarts paging.
+      setState(() => _hasMore = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(userMessage(error))));
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -110,6 +166,7 @@ class _OngoingViewState extends State<OngoingView> {
           backgroundColor: AppColors.surfaceHigh,
           displacement: 20,
           child: CustomScrollView(
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
@@ -133,6 +190,13 @@ class _OngoingViewState extends State<OngoingView> {
                 SliverAnimeGrid(items: _items, onTap: widget.onOpen)
               else
                 SliverAnimeList(items: _items, onTap: widget.onOpen),
+              if (_loadingMore)
+                SliverPadding(
+                  padding: const EdgeInsets.only(top: 18),
+                  sliver: widget.grid
+                      ? SliverAnimeGridSkeleton(count: compact ? 3 : 6)
+                      : const SliverAnimeListSkeleton(count: 3),
+                ),
               const SliverToBoxAdapter(child: SizedBox(height: 28)),
             ],
           ),

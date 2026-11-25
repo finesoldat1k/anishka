@@ -49,6 +49,7 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
   // Pagination for episodes
   static const int _episodesPerPage = 20;
   int _visibleCount = _episodesPerPage;
+  bool _loadingMore = false;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -67,18 +68,30 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
     super.dispose();
   }
 
-  void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.position.pixels;
-    if (maxScroll - currentScroll <= 300) {
-      _loadMoreEpisodes();
-    }
+  int get _episodeTotal {
+    final anime = _anime;
+    if (anime == null) return 0;
+    final voice = _voiceFor(anime);
+    if (voice == null) return 0;
+    return _sourceFor(anime, voice)?.episodes.length ?? 0;
   }
 
-  void _loadMoreEpisodes() {
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter > 420) return;
+    _loadMoreEpisodes();
+  }
+
+  Future<void> _loadMoreEpisodes() async {
+    if (_loadingMore || _visibleCount >= _episodeTotal) return;
+    setState(() => _loadingMore = true);
+    // A tiny pause keeps the reveal intentional instead of dumping every
+    // remaining episode in one frame while the finger is still moving.
+    await Future<void>.delayed(const Duration(milliseconds: 140));
+    if (!mounted) return;
     setState(() {
       _visibleCount += _episodesPerPage;
+      _loadingMore = false;
     });
   }
 
@@ -97,7 +110,11 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
     try {
       final anime = await _repository.getAnimeWithSources(id);
       if (!mounted) return;
-      setState(() => _anime = anime);
+      setState(() {
+        _anime = anime;
+        _visibleCount = _episodesPerPage;
+        _loadingMore = false;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = userMessage(error));
@@ -260,32 +277,18 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
                 padding: EdgeInsets.fromLTRB(padding, 22, padding, 0),
                 sliver: SliverList.separated(
                   itemCount: _visibleCount < episodes.length
-                      ? _visibleCount + 1
+                      ? _visibleCount + (_loadingMore ? 1 : 0)
                       : episodes.length,
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 8),
                   itemBuilder: (context, index) {
-                    // Show load more indicator
-                    if (index >= _visibleCount && _visibleCount < episodes.length) {
-                      return Center(
+                    if (_loadingMore && index >= _visibleCount) {
+                      return const Center(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          child: Column(
-                            children: [
-                              const CircularProgressIndicator(
-                                color: AppColors.accentBright,
-                                strokeWidth: 2,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'загрузка следующих ${_episodesPerPage} серий...',
-                                style: const TextStyle(
-                                  fontFamily: AppFonts.body,
-                                  fontSize: 11,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ],
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: CircularProgressIndicator(
+                            color: AppColors.accentBright,
+                            strokeWidth: 2,
                           ),
                         ),
                       );
@@ -304,13 +307,13 @@ class _EpisodesScreenState extends State<EpisodesScreen> {
                   },
                 ),
               ),
-            if (_visibleCount < episodes.length)
+            if (!_loadingMore && _visibleCount < episodes.length)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Center(
                     child: Text(
-                      'показано ${_visibleCount} из ${episodes.length} ${_episodesLabel(episodes.length)}',
+                      'показано $_visibleCount из ${episodes.length} ${_episodesLabel(episodes.length)}',
                       style: const TextStyle(
                         fontFamily: AppFonts.body,
                         fontSize: 11,
@@ -617,8 +620,8 @@ class _EpisodeRowState extends State<_EpisodeRow>
                           size: widget.compact ? 17 : 19,
                           color: enabled
                               ? (_hovered
-                                  ? AppColors.planned
-                                  : AppColors.textSoft)
+                                    ? AppColors.planned
+                                    : AppColors.textSoft)
                               : AppColors.textFaint,
                         ),
                       ),

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
+import '../json_utils.dart';
 import 'embed/kodik_resolver.dart';
 import 'resolved_stream.dart';
 import 'source_provider.dart';
@@ -91,7 +92,7 @@ class Kodik implements SourceProvider, StreamResolvableSourceProvider {
   Future<UnifiedSource?> getSource(String sourceId) async {
     final parsed = _parseSourceId(sourceId);
     if (parsed == null) return null;
-    final data = await _apiSearch({'kodik_id': parsed.mediaId});
+    final data = await _apiSearch({'id': parsed.mediaId});
     final sources = await _buildSources(data);
     for (final source in sources) {
       if (source.id == sourceId) return source;
@@ -215,17 +216,24 @@ class Kodik implements SourceProvider, StreamResolvableSourceProvider {
   ) async {
     if (results.isEmpty) return const [];
 
+    // Kodik returns one row per translation. Rows for the same season share
+    // the same embed page, so group them and read that page once instead of
+    // fetching it for every translation.
     final grouped = <String, List<Map<String, dynamic>>>{};
     for (final result in results) {
-      final mediaId = result['id']?.toString() ?? '';
-      if (mediaId.isEmpty) continue;
-      grouped.putIfAbsent(mediaId, () => []).add(result);
+      final title = result['title']?.toString() ?? '';
+      final year = result['year']?.toString() ?? '';
+      final type = result['type']?.toString() ?? '';
+      final season = result['last_season']?.toString() ?? '';
+      final key = '$title|$year|$type|$season';
+      grouped.putIfAbsent(key, () => []).add(result);
     }
 
     final sources = <UnifiedSource>[];
-    for (final entry in grouped.entries) {
-      final group = entry.value;
+    for (final group in grouped.values) {
       final first = group.first;
+      final groupId = first['id']?.toString() ?? '';
+      if (groupId.isEmpty) continue;
       final link = _absoluteLink(first['link']?.toString());
       final title = first['title']?.toString() ?? '';
       final screenshots = (first['screenshots'] as List?)
@@ -243,17 +251,26 @@ class Kodik implements SourceProvider, StreamResolvableSourceProvider {
       }
 
       if (embed != null && embed.translations.isNotEmpty) {
+        final apiByTranslation = <String, Map<String, dynamic>>{};
+        for (final result in group) {
+          final translation = result['translation'];
+          if (translation is! Map) continue;
+          final id = translation['id']?.toString() ?? '';
+          final name = translation['title']?.toString() ?? '';
+          apiByTranslation['$id::$name'] = result;
+        }
         for (final translation in embed.translations) {
           final episodes = _buildEpisodes(
             embed: embed,
             translation: translation,
-            mediaId: entry.key,
+            mediaId: groupId,
             fallbackLink: link,
+            apiResult: apiByTranslation['${translation.id}::${translation.name}'],
           );
           if (episodes.isEmpty) continue;
           sources.add(
             UnifiedSource(
-              id: _sourceId(entry.key, translation.id, translation.name),
+              id: _sourceId(groupId, translation.id, translation.name),
               providerId: 'kodik',
               title: translation.name.isEmpty ? 'kodik' : translation.name,
               subtitle: 'kodik · $title',
@@ -268,7 +285,8 @@ class Kodik implements SourceProvider, StreamResolvableSourceProvider {
         continue;
       }
 
-      // Embed unavailable: keep a single playable fallback per translation.
+      // Embed unavailable: build the episode list from the search payload so
+      // a translation still exposes every known episode instead of one.
       for (final result in group) {
         final resultLink = _absoluteLink(result['link']?.toString());
         if (resultLink == null) continue;
@@ -279,25 +297,24 @@ class Kodik implements SourceProvider, StreamResolvableSourceProvider {
         final translationId = translation is Map
             ? (translation['id']?.toString() ?? '0')
             : '0';
-        final episode = UnifiedEpisode(
-          id: 'kodik:${entry.key}:$translationId:1',
-          ordinal: 1,
-          title: 'серия 1',
-          posterUrl: screenshots.isNotEmpty ? screenshots.first : null,
-          embedUrl: resultLink,
-          embedLabel: translationTitle,
-          resolverSource: 'kodik',
-          resolverId: resultLink,
+        final episodes = _fallbackEpisodes(
+          result: result,
+          link: resultLink,
+          mediaId: groupId,
+          translationId: translationId,
+          title: translationTitle,
+          poster: screenshots.isNotEmpty ? screenshots.first : null,
         );
+        if (episodes.isEmpty) continue;
         sources.add(
           UnifiedSource(
-            id: _sourceId(entry.key, translationId, translationTitle),
+            id: _sourceId(groupId, translationId, translationTitle),
             providerId: 'kodik',
             title: translationTitle,
             subtitle: 'kodik · $title',
             logoUrl: screenshots.isNotEmpty ? screenshots.first : null,
-            episodeCount: 1,
-            episodes: [episode],
+            episodeCount: episodes.length,
+            episodes: episodes,
             hasDirectStreams: false,
             requiresResolution: true,
           ),
@@ -307,25 +324,118 @@ class Kodik implements SourceProvider, StreamResolvableSourceProvider {
     return sources;
   }
 
+  List<UnifiedEpisode> _fallbackEpisodes({
+    required Map<String, dynamic> result,
+    required String link,
+    required String mediaId,
+    required String translationId,
+    required String title,
+    required String? poster,
+  }) {
+    final type = result['type']?.toString() ?? '';
+    final isSerial = type.contains('serial') || type.contains('season');
+    if (!isSerial) {
+      return [
+        UnifiedEpisode(
+          id: 'kodik:$mediaId:$translationId:1',
+          ordinal: 1,
+          title: 'фильм',
+          posterUrl: poster,
+          embedUrl: link,
+          embedLabel: title,
+          resolverSource: 'kodik',
+          resolverId: link,
+        ),
+      ];
+    }
+
+    final season = asInt(result['last_season']) ?? 1;
+    final count = asInt(result['episodes_count']) ?? 0;
+    final last = asInt(result['last_episode']) ?? count;
+    if (count <= 0 || last <= 0) {
+      final url = _episodeLink(link, season, 1) ?? link;
+      return [
+        UnifiedEpisode(
+          id: 'kodik:$mediaId:$translationId:$season:1',
+          ordinal: 1,
+          title: 'серия 1',
+          posterUrl: poster,
+          embedUrl: url,
+          embedLabel: title,
+          resolverSource: 'kodik',
+          resolverId: url,
+        ),
+      ];
+    }
+
+    final start = last - count + 1;
+    final first = start < 1 ? 1 : start;
+    final episodes = <UnifiedEpisode>[];
+    for (var ordinal = first; ordinal <= last; ordinal++) {
+      final url = _episodeLink(link, season, ordinal);
+      if (url == null) continue;
+      episodes.add(
+        UnifiedEpisode(
+          id: 'kodik:$mediaId:$translationId:$season:$ordinal',
+          ordinal: ordinal,
+          title: 'серия $ordinal',
+          posterUrl: poster,
+          embedUrl: url,
+          embedLabel: title,
+          resolverSource: 'kodik',
+          resolverId: url,
+        ),
+      );
+    }
+    return episodes;
+  }
+
+  static String? _episodeLink(String link, int season, int ordinal) {
+    final uri = Uri.tryParse(link);
+    if (uri == null) return null;
+    return uri
+        .replace(
+          queryParameters: {
+            ...uri.queryParameters,
+            'season': '$season',
+            'episode': '$ordinal',
+          },
+        )
+        .toString();
+  }
+
   List<UnifiedEpisode> _buildEpisodes({
     required _KodikEmbed embed,
     required _KodikTranslation translation,
     required String mediaId,
     required String? fallbackLink,
+    Map<String, dynamic>? apiResult,
   }) {
     final id = translation.mediaId.isNotEmpty ? translation.mediaId : mediaId;
     final hash = translation.mediaHash;
     final episodes = <UnifiedEpisode>[];
 
+    // The embed page is rendered for one selected translation and lists the
+    // whole season, so limit it to each translation's own episode range.
+    final apiCount = asInt(apiResult?['episodes_count']) ?? 0;
+    final apiLast = asInt(apiResult?['last_episode']) ?? 0;
+    final declaredCount = apiCount > 0 ? apiCount : translation.episodeCount;
+    final declaredLast = apiLast > 0 ? apiLast : declaredCount;
+    final declaredStart = declaredLast - declaredCount + 1;
+
     if (embed.isSerial) {
       final seasons = embed.seasons;
       final seriesBySeason = embed.episodesBySeason;
-      final total = translation.episodeCount;
+      final total = declaredCount;
 
       if (seriesBySeason.isNotEmpty) {
         for (final entry in seriesBySeason.entries) {
           final season = entry.key;
           for (final ordinal in entry.value) {
+            if (declaredCount > 0 &&
+                (ordinal < declaredStart || ordinal > declaredLast)) {
+              continue;
+            }
             final url = _serialUrl(embed.netloc, id, hash, season, ordinal);
             if (url == null) continue;
             episodes.add(
@@ -347,7 +457,11 @@ class Kodik implements SourceProvider, StreamResolvableSourceProvider {
             : (total / seasonList.length).ceil();
         for (final season in seasonList) {
           final count = perSeason <= 0 ? 1 : perSeason;
-          for (var ordinal = 1; ordinal <= count; ordinal++) {
+          final start = seasonList.length <= 1 && declaredStart > 1
+              ? declaredStart
+              : 1;
+          final end = start + count - 1;
+          for (var ordinal = start; ordinal <= end; ordinal++) {
             final url = _serialUrl(embed.netloc, id, hash, season, ordinal);
             if (url == null) continue;
             episodes.add(
@@ -413,7 +527,7 @@ class Kodik implements SourceProvider, StreamResolvableSourceProvider {
       final body = response.data ?? '';
       if (body.isEmpty ||
           body.contains('Видео не найдено') ||
-          body.contains('promo-error')) {
+          body.contains('Видео запрещено к просмотру')) {
         return null;
       }
       return _KodikEmbed.parse(body, link);

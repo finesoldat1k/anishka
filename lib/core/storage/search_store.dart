@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../api/json_utils.dart';
 import '../models/anime_card_item.dart';
 import '../models/shikimori_anime.dart';
 
@@ -71,7 +72,7 @@ class SearchStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addVisited(dynamic anime) {
+  void addVisited(Object anime) {
     final adapter = AnimeCardAdapter(anime);
     final item = VisitedAnime(
       id: adapter.id,
@@ -157,19 +158,17 @@ class VisitedAnime {
   };
 
   static VisitedAnime? fromJson(Map<String, dynamic> json) {
-    final id = json['id'];
-    if (id is! int || id <= 0) return null;
+    final id = asInt(json['id']);
+    if (id == null || id <= 0) return null;
     return VisitedAnime(
       id: id,
-      title: (json['title'] as String?) ?? '',
-      posterUrl: json['poster_url'] as String?,
-      year: json['year'] as int?,
-      score: (json['score'] as num?)?.toDouble(),
-      episodeCount: json['episode_count'] as int?,
-      isShikimori: json['is_shikimori'] as bool? ?? false,
-      visitedAt:
-          DateTime.tryParse(json['visited_at']?.toString() ?? '') ??
-          DateTime.now(),
+      title: asString(json['title']) ?? '',
+      posterUrl: asString(json['poster_url']),
+      year: asInt(json['year']),
+      score: asDouble(json['score']),
+      episodeCount: asInt(json['episode_count']),
+      isShikimori: asBool(json['is_shikimori']),
+      visitedAt: asDate(json['visited_at']) ?? DateTime.now(),
     );
   }
 }

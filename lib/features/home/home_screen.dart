@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _tab = tab);
   }
 
-  void _openAnime(dynamic anime) {
+  void _openAnime(Object anime) {
     if (anime is AnimeRelease) {
       final id = anime.shikimoriId;
       if (id != null && id > 0) {

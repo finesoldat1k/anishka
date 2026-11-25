@@ -391,9 +391,9 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       slivers: [
         if (_mode == AnimeViewMode.grid)
-  SliverAnimeGrid(items: _results, onTap: (item) => _open(item as ShikimoriAnime))
-else
-  SliverAnimeList(items: _results, onTap: (item) => _open(item as ShikimoriAnime)),
+          SliverAnimeGrid(items: _results, onTap: _open)
+        else
+          SliverAnimeList(items: _results, onTap: _open),
         const SliverToBoxAdapter(child: SizedBox(height: 28)),
       ],
     );

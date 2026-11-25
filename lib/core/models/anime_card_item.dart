@@ -107,7 +107,7 @@ extension ShikimoriAnimeDetailsCardItem on ShikimoriAnimeDetails {
 
 /// Helper to extract card properties from any supported type.
 class AnimeCardAdapter {
-  final dynamic _item;
+  final Object _item;
 
   AnimeCardAdapter(this._item);
 

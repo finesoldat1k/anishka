@@ -11,11 +11,11 @@ import 'app_image.dart';
 import 'skeleton.dart';
 
 /// Compact, scannable list rendering of anime entries.
-class SliverAnimeList extends StatelessWidget {
+class SliverAnimeList<T extends Object> extends StatelessWidget {
   const SliverAnimeList({super.key, required this.items, required this.onTap});
 
-  final List<dynamic> items;
-  final void Function(dynamic anime) onTap;
+  final List<T> items;
+  final void Function(T anime) onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +33,7 @@ class SliverAnimeList extends StatelessWidget {
 class AnimeListTile extends StatefulWidget {
   const AnimeListTile({super.key, required this.anime, required this.onTap});
 
-  final dynamic anime;
+  final Object anime;
   final VoidCallback onTap;
 
   @override

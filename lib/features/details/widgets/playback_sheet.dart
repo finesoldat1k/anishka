@@ -32,6 +32,16 @@ Future<PlaybackSelection?> showPlaybackSheet(
   int? initialEpisode,
   String? initialVoice,
 }) {
+  // A new-flow sheet needs at least one source. Fall back to the legacy
+  // release flow when possible, and otherwise refuse to open instead of
+  // crashing on `sources.first`.
+  final normalized = animeWithSources?.sources.isNotEmpty == true
+      ? animeWithSources
+      : null;
+  if (normalized == null && release == null) {
+    return Future<PlaybackSelection?>.value();
+  }
+
   return showModalBottomSheet<PlaybackSelection>(
     context: context,
     isScrollControlled: true,
@@ -40,8 +50,8 @@ Future<PlaybackSelection?> showPlaybackSheet(
     useSafeArea: true,
     builder: (context) => _PlaybackSheet(
       release: release,
-      animeWithSources: animeWithSources,
-      initialSource: initialSource,
+      animeWithSources: normalized,
+      initialSource: normalized == null ? null : initialSource,
       initialEpisode: initialEpisode,
       initialVoice: initialVoice,
     ),

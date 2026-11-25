@@ -4,8 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:anishka/ui/icons/app_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/api/metadata/metadata_provider.dart';
-import '../../core/api/sources/source_provider.dart';
+import '../../core/api/service_info.dart';
 import '../../core/cache/cache_service.dart';
 import '../../core/config/image_proxy.dart';
 import '../../core/services/app_services.dart';
@@ -563,7 +562,7 @@ class _ServiceGroup extends StatelessWidget {
 
   final String title;
   final String subtitle;
-  final List<dynamic> providers;
+  final List<ServiceInfo> providers;
   final bool Function(String id) enabled;
   final void Function(String id, bool v) toggle;
   final Map<String, ServiceHealth> healthById;
@@ -586,7 +585,7 @@ class _ServiceGroup extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: providers.map((p) {
-          final id = p is MetadataProvider ? p.id : (p as SourceProvider).id;
+          final id = p.id;
           final on = enabled(id);
           final health = healthById[id];
           return _ServiceTile(
@@ -1260,7 +1259,7 @@ class _PriorityList extends StatefulWidget {
     this.isMetadata = false,
   });
 
-  final List<dynamic> providers;
+  final List<ServiceInfo> providers;
   final void Function(int, int) onReorder;
   final bool isMetadata;
 
@@ -1269,7 +1268,7 @@ class _PriorityList extends StatefulWidget {
 }
 
 class _PriorityListState extends State<_PriorityList> {
-  late List<dynamic> _providers;
+  late List<ServiceInfo> _providers;
 
   @override
   void initState() {
@@ -1295,7 +1294,7 @@ class _PriorityListState extends State<_PriorityList> {
       children: _providers.asMap().entries.map((entry) {
         final index = entry.key;
         final p = entry.value;
-        final id = p is MetadataProvider ? p.id : (p as SourceProvider).id;
+        final id = p.id;
         final name = p.displayName;
         return Container(
           key: ValueKey(id),

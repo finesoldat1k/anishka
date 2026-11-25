@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'trailer_view_stub.dart'
     if (dart.library.io) 'trailer_view_io.dart'
-    if (dart.library.html) 'trailer_view_web.dart'
+    if (dart.library.js_interop) 'trailer_view_web.dart'
     as impl;
 
 /// Встроенный трейлер с youtube.

@@ -1,13 +1,16 @@
 // Core interfaces for video source providers (streaming, episodes, playback).
+import '../service_info.dart';
 import 'resolved_stream.dart';
 import 'unified_source.dart';
 
 /// Common interface for all video source providers.
-abstract interface class SourceProvider {
+abstract interface class SourceProvider implements ServiceInfo {
   /// Human-readable name for UI.
+  @override
   String get displayName;
 
   /// Unique identifier for storage.
+  @override
   String get id;
 
   /// Find sources by Shikimori ID.
@@ -49,33 +52,44 @@ class SourceProviderRegistry {
 
   /// Currently enabled providers in priority order.
   List<SourceProvider> get enabled {
-    final enabledProviders = _all.where((p) => _enabled.contains(p.id)).toList();
-    // Sort by priority order
+    final enabledProviders =
+        _all.where((p) => _enabled.contains(p.id)).toList();
     enabledProviders.sort((a, b) {
-      final aIndex = _priorityOrder.indexOf(a.id);
-      final bIndex = _priorityOrder.indexOf(b.id);
-      if (aIndex == -1 && bIndex == -1) return 0;
-      if (aIndex == -1) return 1;
-      if (bIndex == -1) return -1;
+      final aIndex = _priorityIndex(a.id);
+      final bIndex = _priorityIndex(b.id);
+      if (aIndex == bIndex) return 0;
       return aIndex.compareTo(bIndex);
     });
     return enabledProviders;
+  }
+
+  int _priorityIndex(String id) {
+    final index = _priorityOrder.indexOf(id);
+    return index == -1 ? _priorityOrder.length : index;
   }
 
   /// Check if a provider is enabled.
   bool isEnabled(String id) => _enabled.contains(id);
 
   /// Enable a provider.
-  void enable(String id) => _enabled.add(id);
+  void enable(String id) {
+    _enabled.add(id);
+    if (!_priorityOrder.contains(id)) _priorityOrder.add(id);
+  }
 
   /// Disable a provider.
   void disable(String id) => _enabled.remove(id);
 
   /// Get provider by ID.
-  SourceProvider? getById(String id) => _all.cast<SourceProvider?>().firstWhere(
-    (p) => p?.id == id,
-    orElse: () => null,
-  );
+  SourceProvider? getById(String id) {
+    for (final provider in _all) {
+      if (provider.id == id) return provider;
+    }
+    return null;
+  }
+
+  /// Priority index of a provider (lower is better).
+  int priorityOf(String id) => _priorityIndex(id);
 
   /// Reorder providers in priority list.
   void reorder(int oldIndex, int newIndex) {

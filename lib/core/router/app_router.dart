@@ -147,7 +147,10 @@ GoRouter createAppRouter() {
           if (id == null || id <= 0) return const _RouteError().asPage(state);
           final extra = state.extra;
           final args = extra is RelatedArgs ? extra : null;
-          final items = args?.items ?? (extra is List ? extra : null);
+          final items = args?.items ??
+              (extra is List
+                  ? extra.whereType<ShikimoriAnime>().toList()
+                  : null);
           return _subpage(
             state,
             RelatedScreen(items: items, shikimoriId: id, title: args?.title),

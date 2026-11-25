@@ -11,19 +11,19 @@ import 'unified_metadata.dart';
 
 class Shikimori implements MetadataProvider {
   Shikimori({Dio? dio})
-      : _dio =
-            dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ShikimoriConfig.apiBase,
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 30),
-                headers: {
-                  'User-Agent': 'anishka/1.0',
-                  'Accept': 'application/json',
-                },
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: ShikimoriConfig.apiBase,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 30),
+              headers: {
+                'User-Agent': 'anishka/1.0',
+                'Accept': 'application/json',
+              },
+            ),
+          );
 
   final Dio _dio;
 
@@ -41,12 +41,19 @@ class Shikimori implements MetadataProvider {
     try {
       final response = await _dio.get(
         '/animes',
-        queryParameters: {'search': query, 'limit': limit, 'order': 'popularity'},
+        queryParameters: {
+          'search': query,
+          'limit': limit,
+          'order': 'popularity',
+        },
       );
       final list = response.data as List<dynamic>;
       return list
-          .map((e) => _toUnifiedFromCompact(
-              ShikimoriAnime.fromJson(e as Map<String, dynamic>)))
+          .map(
+            (e) => _toUnifiedFromCompact(
+              ShikimoriAnime.fromJson(e as Map<String, dynamic>),
+            ),
+          )
           .toList();
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
@@ -99,8 +106,11 @@ class Shikimori implements MetadataProvider {
       );
       final list = response.data as List<dynamic>;
       return list
-          .map((e) => _toUnifiedFromCompact(
-              ShikimoriAnime.fromJson(e as Map<String, dynamic>)))
+          .map(
+            (e) => _toUnifiedFromCompact(
+              ShikimoriAnime.fromJson(e as Map<String, dynamic>),
+            ),
+          )
           .toList();
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
@@ -108,77 +118,93 @@ class Shikimori implements MetadataProvider {
   }
 
   /// Get popular/ongoing anime for home page.
+  ///
+  /// Shikimori paginates with `page`; each page holds up to 50 items.
   Future<List<UnifiedMetadata>> getPopular({
     int limit = 50,
+    int page = 1,
     String order = 'popularity',
     String? status,
     String? kind,
   }) async {
     try {
-      final queryParams = <String, dynamic>{'limit': limit, 'order': order};
+      final queryParams = <String, dynamic>{
+        'limit': limit,
+        'page': page < 1 ? 1 : page,
+        'order': order,
+      };
       if (status != null) queryParams['status'] = status;
       if (kind != null) queryParams['kind'] = kind;
 
       final response = await _dio.get('/animes', queryParameters: queryParams);
       final list = response.data as List<dynamic>;
       return list
-          .map((e) => _toUnifiedFromCompact(
-              ShikimoriAnime.fromJson(e as Map<String, dynamic>)))
+          .map(
+            (e) => _toUnifiedFromCompact(
+              ShikimoriAnime.fromJson(e as Map<String, dynamic>),
+            ),
+          )
           .toList();
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
   }
 
-  UnifiedMetadata _toUnifiedFromCompact(ShikimoriAnime anime) => UnifiedMetadata(
-    id: anime.id,
-    shikimoriId: anime.id,
-    title: anime.displayTitle,
-    englishTitle: null,
-    japaneseTitle: null,
-    synopsis: null,
-    description: null,
-    score: double.tryParse(anime.score),
-    year: anime.year,
-    episodes: anime.episodes,
-    duration: null,
-    status: anime.status,
-    kind: anime.kind,
-    genres: const [],
-    studios: const [],
-    posterUrl: anime.posterOriginalUrl ?? anime.posterUrl,
-    backgroundUrl: anime.backgroundUrl,
-    trailerUrl: null,
-    trailerThumbnail: null,
-    trailerSite: null,
-    screenshots: const [],
-    ageRating: null,
-    franchise: null,
-  );
+  UnifiedMetadata _toUnifiedFromCompact(ShikimoriAnime anime) =>
+      UnifiedMetadata(
+        id: anime.id,
+        shikimoriId: anime.id,
+        title: anime.displayTitle,
+        englishTitle: null,
+        japaneseTitle: null,
+        synopsis: null,
+        description: null,
+        score: double.tryParse(anime.score),
+        year: anime.year,
+        episodes: anime.episodes,
+        duration: null,
+        status: anime.status,
+        kind: anime.kind,
+        genres: const [],
+        studios: const [],
+        posterUrl: anime.posterOriginalUrl ?? anime.posterUrl,
+        backgroundUrl: anime.backgroundUrl,
+        trailerUrl: null,
+        trailerThumbnail: null,
+        trailerSite: null,
+        screenshots: const [],
+        ageRating: null,
+        franchise: null,
+      );
 
-  UnifiedMetadata _toUnifiedFromDetails(ShikimoriAnimeDetails anime) => UnifiedMetadata(
-    id: anime.id,
-    shikimoriId: anime.id,
-    title: anime.russian.isNotEmpty ? anime.russian : anime.name,
-    englishTitle: anime.english?.isNotEmpty == true ? anime.english!.first : null,
-    japaneseTitle: anime.japanese?.isNotEmpty == true ? anime.japanese!.first : null,
-    synopsis: null,
-    description: anime.descriptionText,
-    score: anime.scoreValue,
-    year: anime.year,
-    episodes: anime.episodes,
-    duration: anime.duration,
-    status: anime.status,
-    kind: anime.kind,
-    genres: anime.allGenres,
-    studios: anime.allStudios,
-    posterUrl: anime.posterOriginalUrl ?? anime.posterUrl,
-    backgroundUrl: anime.backgroundUrl ?? anime.metadataBackground,
-    trailerUrl: anime.trailerUrl,
-    trailerThumbnail: anime.trailerThumbnail,
-    trailerSite: anime.trailerSite,
-    screenshots: anime.screenshots,
-    ageRating: anime.rating,
-    franchise: anime.franchise,
-  );
+  UnifiedMetadata _toUnifiedFromDetails(ShikimoriAnimeDetails anime) =>
+      UnifiedMetadata(
+        id: anime.id,
+        shikimoriId: anime.id,
+        title: anime.russian.isNotEmpty ? anime.russian : anime.name,
+        englishTitle: anime.english?.isNotEmpty == true
+            ? anime.english!.first
+            : null,
+        japaneseTitle: anime.japanese?.isNotEmpty == true
+            ? anime.japanese!.first
+            : null,
+        synopsis: null,
+        description: anime.descriptionText,
+        score: anime.scoreValue,
+        year: anime.year,
+        episodes: anime.episodes,
+        duration: anime.duration,
+        status: anime.status,
+        kind: anime.kind,
+        genres: anime.allGenres,
+        studios: anime.allStudios,
+        posterUrl: anime.posterOriginalUrl ?? anime.posterUrl,
+        backgroundUrl: anime.backgroundUrl ?? anime.metadataBackground,
+        trailerUrl: anime.trailerUrl,
+        trailerThumbnail: anime.trailerThumbnail,
+        trailerSite: anime.trailerSite,
+        screenshots: anime.screenshots,
+        ageRating: anime.rating,
+        franchise: anime.franchise,
+      );
 }

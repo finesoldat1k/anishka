@@ -1,4 +1,5 @@
 // Shikimori anime models for catalog/search.
+import '../../core/api/json_utils.dart';
 import '../../core/api/shikimori_config.dart';
 import '../../core/utils/format.dart';
 
@@ -34,20 +35,18 @@ class ShikimoriAnime {
 
   factory ShikimoriAnime.fromJson(Map<String, dynamic> json) {
     return ShikimoriAnime(
-      id: json['id'] as int,
-      name: (json['name'] as String? ?? '').lc,
-      russian: (json['russian'] as String? ?? '').lc,
-      kind: (json['kind'] as String? ?? '').lc,
-      score: (json['score'] as String? ?? '').lc,
-      status: (json['status'] as String? ?? '').lc,
-      episodes: json['episodes'] as int? ?? 0,
-      episodesAired: json['episodes_aired'] as int? ?? 0,
-      image: ShikimoriImage.fromJson(
-        json['image'] as Map<String, dynamic>? ?? {},
-      ),
-      url: (json['url'] as String? ?? '').lc,
-      airedOn: json['aired_on'] as String?,
-      releasedOn: json['released_on'] as String?,
+      id: asInt(json['id']) ?? 0,
+      name: (asString(json['name']) ?? '').lc,
+      russian: (asString(json['russian']) ?? '').lc,
+      kind: (asString(json['kind']) ?? '').lc,
+      score: (asString(json['score']) ?? '').lc,
+      status: (asString(json['status']) ?? '').lc,
+      episodes: asInt(json['episodes']) ?? 0,
+      episodesAired: asInt(json['episodes_aired']) ?? 0,
+      image: ShikimoriImage.fromJson(asMap(json['image'])),
+      url: (asString(json['url']) ?? '').lc,
+      airedOn: asString(json['aired_on']),
+      releasedOn: asString(json['released_on']),
     );
   }
 
@@ -79,10 +78,11 @@ class ShikimoriAnime {
     return url.contains('/assets/globals/missing_');
   }
 
-  /// Year from aired_on.
+  /// Year from aired_on (or released_on as a fallback).
   int? get year {
-    if (airedOn == null) return null;
-    return int.tryParse(airedOn!.substring(0, 4));
+    final raw = airedOn ?? releasedOn;
+    if (raw == null || raw.length < 4) return null;
+    return int.tryParse(raw.substring(0, 4));
   }
 
   /// Status label for UI.
@@ -135,10 +135,10 @@ class ShikimoriImage {
 
   factory ShikimoriImage.fromJson(Map<String, dynamic> json) {
     return ShikimoriImage(
-      original: json['original'] as String?,
-      preview: json['preview'] as String?,
-      x96: json['x96'] as String?,
-      x48: json['x48'] as String?,
+      original: asString(json['original']),
+      preview: asString(json['preview']),
+      x96: asString(json['x96']),
+      x48: asString(json['x48']),
     );
   }
 }
@@ -245,47 +245,39 @@ class ShikimoriAnimeDetails {
 
   factory ShikimoriAnimeDetails.fromJson(Map<String, dynamic> json) {
     return ShikimoriAnimeDetails(
-      id: json['id'] as int,
-      name: (json['name'] as String? ?? '').lc,
-      russian: (json['russian'] as String? ?? '').lc,
-      kind: (json['kind'] as String? ?? '').lc,
-      score: (json['score'] as String? ?? '').lc,
-      status: (json['status'] as String? ?? '').lc,
-      episodes: json['episodes'] as int? ?? 0,
-      episodesAired: json['episodes_aired'] as int? ?? 0,
-      image: ShikimoriImage.fromJson(
-        json['image'] as Map<String, dynamic>? ?? {},
-      ),
-      url: (json['url'] as String? ?? '').lc,
-      airedOn: json['aired_on'] as String?,
-      releasedOn: json['released_on'] as String?,
-      duration: json['duration'] as int?,
-      description: (json['description'] as String? ?? '').lc,
-      descriptionHtml: json['description_html'] as String?,
-      rating: json['rating'] as String?,
-      english: (json['english'] as List?)?.cast<String>(),
-      japanese: (json['japanese'] as List?)?.cast<String>(),
-      synonyms: (json['synonyms'] as List?)?.cast<String>(),
-      genres: (json['genres'] as List?)
-          ?.map((g) => ShikimoriGenre.fromJson(g as Map<String, dynamic>))
+      id: asInt(json['id']) ?? 0,
+      name: (asString(json['name']) ?? '').lc,
+      russian: (asString(json['russian']) ?? '').lc,
+      kind: (asString(json['kind']) ?? '').lc,
+      score: (asString(json['score']) ?? '').lc,
+      status: (asString(json['status']) ?? '').lc,
+      episodes: asInt(json['episodes']) ?? 0,
+      episodesAired: asInt(json['episodes_aired']) ?? 0,
+      image: ShikimoriImage.fromJson(asMap(json['image'])),
+      url: (asString(json['url']) ?? '').lc,
+      airedOn: asString(json['aired_on']),
+      releasedOn: asString(json['released_on']),
+      duration: asInt(json['duration']),
+      description: (asString(json['description']) ?? '').lc,
+      descriptionHtml: asString(json['description_html']),
+      rating: asString(json['rating']),
+      english: asStringList(json['english']),
+      japanese: asStringList(json['japanese']),
+      synonyms: asStringList(json['synonyms']),
+      genres: asMapList(json['genres'])
+          .map(ShikimoriGenre.fromJson)
           .toList(),
-      studios: (json['studios'] as List?)
-          ?.map((s) => ShikimoriStudio.fromJson(s as Map<String, dynamic>))
+      studios: asMapList(json['studios'])
+          .map(ShikimoriStudio.fromJson)
           .toList(),
-      videos: (json['videos'] as List?)
-          ?.map((v) => ShikimoriVideo.fromJson(v as Map<String, dynamic>))
+      videos: asMapList(json['videos'])
+          .map(ShikimoriVideo.fromJson)
           .toList(),
-      franchise: json['franchise'] as String?,
-      screenshots:
-          (json['screenshots'] as List?)
-              ?.map(
-                (e) => e is Map<String, dynamic>
-                    ? ShikimoriConfig.imageUrl(e['original'] as String?)
-                    : null,
-              )
-              .whereType<String>()
-              .toList() ??
-          const [],
+      franchise: asString(json['franchise']),
+      screenshots: asMapList(json['screenshots'])
+          .map((item) => ShikimoriConfig.imageUrl(asString(item['original'])))
+          .whereType<String>()
+          .toList(),
     );
   }
 
@@ -582,10 +574,10 @@ class ShikimoriGenre {
 
   factory ShikimoriGenre.fromJson(Map<String, dynamic> json) {
     return ShikimoriGenre(
-      id: json['id'] as int,
-      name: (json['name'] as String? ?? '').lc,
-      russian: (json['russian'] as String? ?? '').lc,
-      kind: json['kind'] as String?,
+      id: asInt(json['id']) ?? 0,
+      name: (asString(json['name']) ?? '').lc,
+      russian: (asString(json['russian']) ?? '').lc,
+      kind: asString(json['kind']),
     );
   }
 }
@@ -602,9 +594,9 @@ class ShikimoriStudio {
 
   factory ShikimoriStudio.fromJson(Map<String, dynamic> json) {
     return ShikimoriStudio(
-      id: json['id'] as int,
-      name: (json['name'] as String? ?? '').lc,
-      filteredName: json['filtered_name'] as String?,
+      id: asInt(json['id']) ?? 0,
+      name: (asString(json['name']) ?? '').lc,
+      filteredName: asString(json['filtered_name']),
     );
   }
 }
@@ -625,11 +617,11 @@ class ShikimoriVideo {
 
   factory ShikimoriVideo.fromJson(Map<String, dynamic> json) {
     return ShikimoriVideo(
-      id: json['id'] as int,
-      url: json['url'] as String? ?? '',
-      name: (json['name'] as String? ?? '').lc,
-      kind: (json['kind'] as String? ?? '').lc,
-      hosting: (json['hosting'] as String? ?? '').lc,
+      id: asInt(json['id']) ?? 0,
+      url: asString(json['url']) ?? '',
+      name: (asString(json['name']) ?? '').lc,
+      kind: (asString(json['kind']) ?? '').lc,
+      hosting: (asString(json['hosting']) ?? '').lc,
     );
   }
 }

@@ -78,8 +78,7 @@ class DetailsHero extends StatelessWidget {
     final meta = <String>[
       year?.toString() ?? '',
       if (kindLabel.isNotEmpty) kindLabel,
-      if (episodeCount > 0)
-        episodesLabel(episodeCount),
+      if (episodeCount > 0) episodesLabel(episodeCount),
       if (score != null) formatScore(score),
       if (ageRating != null && ageRating.isNotEmpty) ageRating,
     ].where((s) => s.isNotEmpty).join('  ·  ');
@@ -442,17 +441,12 @@ class _BookmarkButtonState extends State<_BookmarkButton>
     super.dispose();
   }
 
-  void _handleTapDown(TapDownDetails _) {
+  void _handlePressStart(PointerDownEvent _) {
     _pressController.forward();
     setState(() => _pressed = true);
   }
 
-  void _handleTapUp(TapUpDetails _) {
-    _pressController.reverse();
-    setState(() => _pressed = false);
-  }
-
-  void _handleTapCancel() {
+  void _handlePressEnd(PointerEvent _) {
     _pressController.reverse();
     setState(() => _pressed = false);
   }
@@ -468,6 +462,26 @@ class _BookmarkButtonState extends State<_BookmarkButton>
   Widget build(BuildContext context) {
     final active = widget.status != null;
     final tone = _tone;
+
+    // Opaque fills only: hover lightens the resting surface, press darkens it.
+    // Nothing turns semi-transparent while the button is interactive.
+    final Color base;
+    if (active) {
+      base = _hovered
+          ? Color.alphaBlend(Colors.white.withValues(alpha: 0.08), tone)
+          : tone;
+    } else {
+      base = _hovered
+          ? Color.alphaBlend(
+              tone.withValues(alpha: 0.14),
+              AppColors.surfaceHigh,
+            )
+          : AppColors.surfaceHigh;
+    }
+    final background = _pressed
+        ? Color.alphaBlend(Colors.black.withValues(alpha: 0.14), base)
+        : base;
+    final foreground = active ? AppColors.background : AppColors.text;
 
     return ScaleTransition(
       scale: _pressAnimation,
@@ -524,25 +538,25 @@ class _BookmarkButtonState extends State<_BookmarkButton>
               setState(() => _pressed = false);
             }
           },
-          child: GestureDetector(
-            onTapDown: _handleTapDown,
-            onTapUp: _handleTapUp,
-            onTapCancel: _handleTapCancel,
+          // A Listener does not compete in the gesture arena, so the tap still
+          // reaches PopupMenuButton and opens the menu.
+          child: Listener(
+            onPointerDown: _handlePressStart,
+            onPointerUp: _handlePressEnd,
+            onPointerCancel: _handlePressEnd,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 170),
               curve: Curves.easeOutCubic,
               height: 49,
               padding: const EdgeInsets.symmetric(horizontal: 18),
               decoration: BoxDecoration(
-                color: active
-                    ? tone
-                    : _hovered
-                    ? tone.withValues(alpha: 0.15)
-                    : AppColors.surfaceHigh,
+                color: background,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: active || _hovered
-                      ? tone.withValues(alpha: active ? 0.8 : 0.4)
+                  color: active
+                      ? tone
+                      : _hovered
+                      ? tone.withValues(alpha: 0.45)
                       : AppColors.borderStrong,
                 ),
               ),
@@ -553,7 +567,7 @@ class _BookmarkButtonState extends State<_BookmarkButton>
                   Icon(
                     active ? AppIcons.bookmark : AppIcons.bookmarkSimple,
                     size: 17,
-                    color: active || _hovered ? Colors.white : AppColors.text,
+                    color: foreground,
                   ),
                   const SizedBox(width: 9),
                   Flexible(
@@ -561,11 +575,11 @@ class _BookmarkButtonState extends State<_BookmarkButton>
                       widget.status?.label ?? 'закладка',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: AppFonts.body,
                         fontWeight: FontWeight.w600,
                         fontSize: 12.5,
-                        color: Colors.white,
+                        color: foreground,
                       ),
                     ),
                   ),
@@ -573,7 +587,9 @@ class _BookmarkButtonState extends State<_BookmarkButton>
                   Icon(
                     AppIcons.caretDown,
                     size: 14,
-                    color: active ? Colors.white : AppColors.textMuted,
+                    color: active
+                        ? AppColors.background.withValues(alpha: 0.72)
+                        : AppColors.textMuted,
                   ),
                 ],
               ),

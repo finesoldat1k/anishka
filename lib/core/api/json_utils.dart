@@ -46,3 +46,25 @@ DateTime? asDate(Object? value) {
   if (value == null) return null;
   return DateTime.tryParse(value.toString());
 }
+
+/// Converts any list into a list of non-empty strings.
+List<String> asStringList(Object? value) {
+  if (value is! List) return const [];
+  final result = <String>[];
+  for (final item in value) {
+    final text = asString(item);
+    if (text != null) result.add(text);
+  }
+  return result;
+}
+
+/// Converts any map into a `Map<String, String>`, dropping null values.
+Map<String, String> asStringMap(Object? value) {
+  if (value is! Map) return const {};
+  final result = <String, String>{};
+  value.forEach((key, item) {
+    final text = asString(item);
+    if (text != null) result[key.toString()] = text;
+  });
+  return result;
+}

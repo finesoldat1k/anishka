@@ -17,4 +17,14 @@ class AppScrollBehavior extends MaterialScrollBehavior {
     PointerDeviceKind.invertedStylus,
     PointerDeviceKind.trackpad,
   };
+
+  /// The app never shows scrollbars: rails and pages stay visually clean.
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
+  }
 }

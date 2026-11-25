@@ -82,6 +82,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double _rate = 1;
   String? _errorDetails;
 
+  /// Incremented whenever a new playback request starts. Async completions
+  /// from older requests are ignored, so quickly switching episodes or
+  /// qualities can never overwrite the newest selection.
+  int _playbackToken = 0;
+
   final _position = ValueNotifier<Duration>(Duration.zero);
   final _duration = ValueNotifier<Duration>(Duration.zero);
   final _buffer = ValueNotifier<Duration>(Duration.zero);
@@ -106,6 +111,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   String _streamKey(AnimeEpisode episode, String quality) =>
       '${episode.id}::$quality';
+
+  /// Whether the completion of an async playback step still belongs to the
+  /// latest request.
+  bool _isCurrentPlayback(int token) => mounted && token == _playbackToken;
 
   /// Whether this platform can render the provider player in-app.
   bool _canEmbed(AnimeEpisode episode) =>
@@ -393,8 +402,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     String? quality,
     bool autoplay = true,
   }) async {
+    final token = ++_playbackToken;
+
     if (_preferEmbed(episode)) {
-      await _startEmbed(episode, voice);
+      await _startEmbed(episode, voice, token: token);
       return;
     }
 
@@ -436,7 +447,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       });
       if (!episode.canResolve) {
         if (_canEmbed(episode)) {
-          await _startEmbed(episode, voice);
+          await _startEmbed(episode, voice, token: token);
           return;
         }
         setState(() {
@@ -450,12 +461,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         episode,
         quality: resolved,
       );
-      if (!mounted) return;
+      if (!_isCurrentPlayback(token)) return;
       if (stream == null || !stream.isPlayable) {
         // Resolution failed: keep playback in-app via the embed player when
         // the platform supports it.
         if (_canEmbed(episode)) {
-          await _startEmbed(episode, voice);
+          await _startEmbed(episode, voice, token: token);
           return;
         }
         setState(() {
@@ -467,6 +478,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
       _resolvedStreams[_streamKey(episode, resolved)] = stream;
     }
+
+    if (!_isCurrentPlayback(token)) return;
 
     setState(() {
       _episode = episode;
@@ -489,7 +502,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         Media(stream.url, httpHeaders: stream.headers),
         play: autoplay,
       );
-      if (!mounted) return;
+      if (!_isCurrentPlayback(token)) return;
       _library.saveProgress(
         releaseId: widget.releaseId,
         episode: episode.ordinal,
@@ -498,7 +511,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _revealControls();
       _focusNode.requestFocus();
     } catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentPlayback(token)) return;
       setState(() {
         _playerError = 'не удалось включить серию.';
         _errorDetails = error.toString();
@@ -508,10 +521,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   /// Keep playback in-app using the provider's embedded player.
-  Future<void> _startEmbed(AnimeEpisode episode, VoiceoverInfo voice) async {
+  Future<void> _startEmbed(
+    AnimeEpisode episode,
+    VoiceoverInfo voice, {
+    int? token,
+  }) async {
+    token ??= ++_playbackToken;
     final player = _player;
-    if (player != null) await player.pause();
-    if (!mounted) return;
+    if (player != null) {
+      try {
+        await player.pause();
+      } catch (_) {
+        // The native player may already be disposed.
+      }
+    }
+    if (!_isCurrentPlayback(token)) return;
     setState(() {
       _episode = episode;
       _voice = voice;
@@ -556,6 +580,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (_isEmbedPlayback) return;
     final episode = _episode;
     if (episode == null || quality == _quality) return;
+    final token = ++_playbackToken;
     final position = _position.value;
     final wasPlaying = _playing;
 
@@ -577,7 +602,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         episode,
         quality: quality,
       );
-      if (!mounted) return;
+      if (!_isCurrentPlayback(token)) return;
       if (stream == null || !stream.isPlayable) {
         setState(() {
           _playerError = 'не удалось переключить качество.';
@@ -588,6 +613,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _resolvedStreams[_streamKey(episode, quality)] = stream;
     }
 
+    if (!_isCurrentPlayback(token)) return;
     setState(() {
       _quality = quality;
       _playerError = null;
@@ -600,13 +626,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
         Media(stream.url, httpHeaders: stream.headers),
         play: wasPlaying,
       );
+      if (!_isCurrentPlayback(token)) return;
       if (position > Duration.zero) {
         await player.seek(position);
       }
-      if (!mounted) return;
+      if (!_isCurrentPlayback(token)) return;
       _focusNode.requestFocus();
     } catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentPlayback(token)) return;
       setState(() {
         _playerError = 'не удалось переключить качество.';
         _errorDetails = error.toString();
@@ -803,9 +830,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } else {
       final shikimoriId = widget.source?.shikimoriAnime.id ?? 0;
       context.go(
-        shikimoriId > 0
-            ? '/anime/shikimori/$shikimoriId'
-            : '/anime/${widget.releaseId}',
+        shikimoriId > 0 ? '/anime/shikimori/$shikimoriId' : '/',
       );
     }
   }
@@ -1265,7 +1290,7 @@ class _TopBar extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 9),
                                 Text(
-                                  '${option}p',
+                                  _qualityLabel(option),
                                   style: const TextStyle(
                                     fontFamily: AppFonts.body,
                                     fontSize: 12.5,
@@ -1278,7 +1303,7 @@ class _TopBar extends StatelessWidget {
                       ],
                       child: _GlassPill(
                         icon: AppIcons.highDefinition,
-                        label: '${quality}p',
+                        label: _qualityLabel(quality),
                       ),
                     ),
                   const SizedBox(width: 8),
@@ -2241,6 +2266,9 @@ class _IconButtonState extends State<_IconButton>
     final bgColor = widget.subtle
         ? Colors.white.withValues(alpha: 0.055)
         : Colors.white.withValues(alpha: 0.09);
+    final hoverColor = widget.subtle
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.white.withValues(alpha: 0.16);
     final borderColor = Colors.white.withValues(
       alpha: widget.subtle ? 0.08 : 0.14,
     );
@@ -2260,7 +2288,7 @@ class _IconButtonState extends State<_IconButton>
         child: ScaleTransition(
           scale: _pressAnimation,
           child: Material(
-            color: _hovered ? bgColor.withValues(alpha: 1.5) : bgColor,
+            color: _hovered ? hoverColor : bgColor,
             shape: CircleBorder(side: BorderSide(color: borderColor)),
             child: InkWell(
               customBorder: const CircleBorder(),
@@ -2306,7 +2334,6 @@ class _PlayButton extends StatefulWidget {
 
 class _PlayButtonState extends State<_PlayButton>
     with SingleTickerProviderStateMixin {
-  bool _pressed = false;
   late final AnimationController _pressController;
   late final Animation<double> _pressAnimation;
 
@@ -2330,24 +2357,19 @@ class _PlayButtonState extends State<_PlayButton>
 
   void _handleTapDown(TapDownDetails _) {
     _pressController.forward();
-    setState(() => _pressed = true);
   }
 
   void _handleTapUp(TapUpDetails _) {
     _pressController.reverse();
-    setState(() => _pressed = false);
   }
 
   void _handleTapCancel() {
     _pressController.reverse();
-    setState(() => _pressed = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final size = widget.big ? 76.0 : (widget.compact ? 48.0 : 56.0);
-    // _pressed is used in tap handlers; this reference suppresses the unused field warning.
-    final _ = _pressed;
 
     return Tooltip(
       message: widget.playing ? 'пауза' : 'воспроизвести',
@@ -2394,6 +2416,12 @@ class _PlayButtonState extends State<_PlayButton>
     );
   }
 }
+
+String _qualityLabel(String quality) => switch (quality) {
+  'auto' => 'авто',
+  'embed' => 'embed',
+  _ => '${quality}p',
+};
 
 String _formatRate(double value) {
   final hundredths = (value * 100).round();

@@ -81,27 +81,21 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
 
     try {
-      // Stage 1: base Shikimori details — instant first paint on cold load.
-      final titleHint = widget.preview?.displayTitle;
-      final base = await _repository.getShikimoriDetails(
+      final full = await _repository.getAnimeWithSources(
         widget.shikimoriId,
-        titleHint: titleHint,
+        refresh: refresh,
+        titleHint: widget.preview?.displayTitle,
+        // During pull-to-refresh keep the current full page on screen instead
+        // of replacing it with an empty partial result.
+        onPartial: refresh
+            ? null
+            : (partial) {
+                if (!mounted) return;
+                _applyBase(partial.shikimoriAnime);
+              },
       );
       if (!mounted) return;
-      _applyBase(base);
-
-      // Stage 2: full data — enrichment + sources + related in parallel.
-      final results = await Future.wait([
-        _repository.getAnimeDetails(widget.shikimoriId, refresh: refresh),
-        _repository.getAnimeWithSources(
-          widget.shikimoriId,
-          refresh: refresh,
-        ),
-      ]);
-      if (!mounted) return;
-      final enriched = results[0] as ShikimoriAnimeDetails;
-      final full = results[1] as AnimeWithSources;
-      _applyFull(enriched, full);
+      _applyFull(full.shikimoriAnime, full);
     } catch (error) {
       if (!mounted) return;
       if (_anime == null) {
@@ -150,7 +144,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
     });
   }
 
-  void _rememberVisited(dynamic anime) {
+  void _rememberVisited(ShikimoriAnimeDetails anime) {
     if (_visitedSaved) return;
     _visitedSaved = true;
     context.read<SearchStore>().addVisited(anime);
@@ -180,10 +174,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
     );
   }
 
-  void _openRelated(dynamic anime) {
-    if (anime is ShikimoriAnime) {
-      context.push('/anime/shikimori/${anime.id}', extra: anime);
-    }
+  void _openRelated(ShikimoriAnime anime) {
+    context.push('/anime/shikimori/${anime.id}', extra: anime);
   }
 
   void _toggleFavorite() {

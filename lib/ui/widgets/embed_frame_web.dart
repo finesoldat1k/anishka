@@ -1,7 +1,7 @@
-import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:web/web.dart' as web;
 
 final Map<String, String> _registeredViews = {};
 
@@ -13,7 +13,7 @@ Widget buildEmbedFrame(String url, {String title = ''}) {
   final viewType = _registeredViews.putIfAbsent(url, () {
     final type = 'anishka-embed-${url.hashCode}-${_registeredViews.length}';
     ui_web.platformViewRegistry.registerViewFactory(type, (viewId) {
-      final frame = html.IFrameElement()
+      final frame = web.HTMLIFrameElement()
         ..src = url
         ..title = title
         ..allowFullscreen = true
@@ -25,8 +25,7 @@ Widget buildEmbedFrame(String url, {String title = ''}) {
           'allow',
           'autoplay; fullscreen; encrypted-media; picture-in-picture',
         )
-        ..setAttribute('referrerpolicy', 'no-referrer-when-downgrade')
-        ..setAttribute('scrolling', 'no');
+        ..setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
       return frame;
     });
     return type;

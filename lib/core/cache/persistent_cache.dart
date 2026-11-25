@@ -13,22 +13,30 @@ class PersistentCacheEntry {
   const PersistentCacheEntry({
     required this.value,
     required this.expiresAt,
+    required this.createdAt,
   });
 
   final String value; // JSON-encoded string
   final DateTime expiresAt;
+  final DateTime createdAt;
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
 
   Map<String, dynamic> toJson() => {
         'value': value,
         'expiresAt': expiresAt.toIso8601String(),
+        'createdAt': createdAt.toIso8601String(),
       };
 
   static PersistentCacheEntry fromJson(Map<String, dynamic> json) {
+    final expiresAt = DateTime.parse(json['expiresAt'] as String);
     return PersistentCacheEntry(
       value: json['value'] as String,
-      expiresAt: DateTime.parse(json['expiresAt'] as String),
+      expiresAt: expiresAt,
+      // Entries written by older app versions have no createdAt; expiry is
+      // the closest available approximation of their age.
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ?? expiresAt,
     );
   }
 }
@@ -38,9 +46,12 @@ class PersistentCacheEntry {
 /// Keys are namespaced internally so they never collide with
 /// `ServiceSettingsStore` or other `shared_preferences` entries.
 class PersistentCache {
-  PersistentCache(this._prefs);
+  PersistentCache(this._prefs, {this.maxEntries = 400});
 
   final SharedPreferences _prefs;
+
+  /// Maximum number of entries kept on disk.
+  final int maxEntries;
 
   static const String _prefix = 'anishka_cache:';
 
@@ -48,15 +59,20 @@ class PersistentCache {
 
   /// Read a cached value if present and not expired.
   T? read<T>(String key, T Function(dynamic json) decoder) {
-    final raw = _prefs.getString(_key(key));
-    if (raw == null) return null;
+    final entry = readEntry(key);
+    if (entry == null) return null;
     try {
-      final entry = PersistentCacheEntry.fromJson(jsonDecode(raw));
-      if (entry.isExpired) return null;
       return decoder(jsonDecode(entry.value));
     } catch (_) {
       return null;
     }
+  }
+
+  /// Read a raw cache entry (including its remaining TTL).
+  PersistentCacheEntry? readEntry(String key) {
+    final entry = _decode(_prefs.getString(_key(key)));
+    if (entry == null || entry.isExpired) return null;
+    return entry;
   }
 
   /// Write a value with a TTL.
@@ -69,6 +85,7 @@ class PersistentCache {
     final entry = PersistentCacheEntry(
       value: jsonEncode(encoder != null ? encoder(value) : value),
       expiresAt: DateTime.now().add(ttl),
+      createdAt: DateTime.now(),
     );
     await _prefs.setString(_key(key), jsonEncode(entry.toJson()));
     await _enforceSizeCap();
@@ -76,9 +93,11 @@ class PersistentCache {
 
   /// Write a pre-encoded JSON string with a TTL (no encoder type gymnastics).
   Future<void> writeRaw(String key, String jsonValue, Duration ttl) async {
+    final now = DateTime.now();
     final entry = PersistentCacheEntry(
       value: jsonValue,
-      expiresAt: DateTime.now().add(ttl),
+      expiresAt: now.add(ttl),
+      createdAt: now,
     );
     await _prefs.setString(_key(key), jsonEncode(entry.toJson()));
     await _enforceSizeCap();
@@ -102,7 +121,7 @@ class PersistentCache {
 
   /// Clear every anishka cache entry.
   Future<void> clear() async {
-    final keys = _prefs.getKeys().where((k) => k.startsWith(_prefix));
+    final keys = _prefs.getKeys().where((k) => k.startsWith(_prefix)).toList();
     for (final key in keys) {
       await _prefs.remove(key);
     }
@@ -113,16 +132,43 @@ class PersistentCache {
     return _prefs.getKeys().where((k) => k.startsWith(_prefix)).length;
   }
 
+  PersistentCacheEntry? _decode(String? raw) {
+    if (raw == null) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return PersistentCacheEntry.fromJson(
+        decoded.map((key, value) => MapEntry(key.toString(), value)),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _enforceSizeCap() async {
-    // Best-effort: if we exceed the cap, drop the oldest half of entries.
-    // `shared_preferences` does not expose sizes, so we cap by count instead.
-    const int maxEntries = 400;
-    final keys = _prefs.getKeys().where((k) => k.startsWith(_prefix)).toList();
-    if (keys.length <= maxEntries) return;
-    keys.sort();
-    final toRemove = keys.sublist(0, keys.length - maxEntries);
-    for (final key in toRemove) {
-      await _prefs.remove(key);
+    // `shared_preferences` does not expose sizes, so we cap by count and
+    // evict the oldest entries (by creation time) first.
+    final cap = maxEntries < 1 ? 1 : maxEntries;
+    final storageKeys =
+        _prefs.getKeys().where((k) => k.startsWith(_prefix)).toList();
+    if (storageKeys.length <= cap) return;
+
+    final alive = <({String key, DateTime createdAt})>[];
+    for (final storageKey in storageKeys) {
+      final entry = _decode(_prefs.getString(storageKey));
+      if (entry == null || entry.isExpired) {
+        await _prefs.remove(storageKey);
+        continue;
+      }
+      alive.add((key: storageKey, createdAt: entry.createdAt));
+    }
+
+    final excess = alive.length - cap;
+    if (excess <= 0) return;
+
+    alive.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    for (var i = 0; i < excess; i++) {
+      await _prefs.remove(alive[i].key);
     }
   }
 }

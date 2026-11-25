@@ -1,5 +1,7 @@
 // Unified metadata model that all metadata providers map to.
 // This is the single type used throughout the app for anime metadata.
+import '../json_utils.dart';
+
 class UnifiedMetadata {
   const UnifiedMetadata({
     required this.id,
@@ -186,29 +188,29 @@ class UnifiedMetadata {
 
   factory UnifiedMetadata.fromJson(Map<String, dynamic> json) {
     return UnifiedMetadata(
-      id: json['id'] as int,
-      shikimoriId: json['shikimoriId'] as int,
-      title: json['title'] as String,
-      englishTitle: json['englishTitle'] as String?,
-      japaneseTitle: json['japaneseTitle'] as String?,
-      synopsis: json['synopsis'] as String?,
-      description: json['description'] as String?,
-      score: (json['score'] as num?)?.toDouble(),
-      year: json['year'] as int?,
-      episodes: json['episodes'] as int?,
-      duration: json['duration'] as int?,
-      status: json['status'] as String?,
-      kind: json['kind'] as String?,
-      genres: (json['genres'] as List? ?? const []).cast<String>(),
-      studios: (json['studios'] as List? ?? const []).cast<String>(),
-      posterUrl: json['posterUrl'] as String?,
-      backgroundUrl: json['backgroundUrl'] as String?,
-      trailerUrl: json['trailerUrl'] as String?,
-      trailerThumbnail: json['trailerThumbnail'] as String?,
-      trailerSite: json['trailerSite'] as String?,
-      screenshots: (json['screenshots'] as List? ?? const []).cast<String>(),
-      ageRating: json['ageRating'] as String?,
-      franchise: json['franchise'] as String?,
+      id: asInt(json['id']) ?? 0,
+      shikimoriId: asInt(json['shikimoriId']) ?? 0,
+      title: asString(json['title']) ?? '',
+      englishTitle: asString(json['englishTitle']),
+      japaneseTitle: asString(json['japaneseTitle']),
+      synopsis: asString(json['synopsis']),
+      description: asString(json['description']),
+      score: asDouble(json['score']),
+      year: asInt(json['year']),
+      episodes: asInt(json['episodes']),
+      duration: asInt(json['duration']),
+      status: asString(json['status']),
+      kind: asString(json['kind']),
+      genres: asStringList(json['genres']),
+      studios: asStringList(json['studios']),
+      posterUrl: asString(json['posterUrl']),
+      backgroundUrl: asString(json['backgroundUrl']),
+      trailerUrl: asString(json['trailerUrl']),
+      trailerThumbnail: asString(json['trailerThumbnail']),
+      trailerSite: asString(json['trailerSite']),
+      screenshots: asStringList(json['screenshots']),
+      ageRating: asString(json['ageRating']),
+      franchise: asString(json['franchise']),
     );
   }
 }

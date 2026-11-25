@@ -1,5 +1,7 @@
 // Unified source model that all video source providers map to.
 // This is the single type used throughout the app for video sources.
+import '../json_utils.dart';
+
 class UnifiedSource {
   const UnifiedSource({
     required this.id,
@@ -80,19 +82,19 @@ class UnifiedSource {
       };
 
   factory UnifiedSource.fromJson(Map<String, dynamic> json) {
+    final episodes = asMapList(json['episodes'])
+        .map(UnifiedEpisode.fromJson)
+        .toList();
     return UnifiedSource(
-      id: json['id'] as String,
-      providerId: json['providerId'] as String,
-      title: json['title'] as String,
-      subtitle: json['subtitle'] as String?,
-      logoUrl: json['logoUrl'] as String?,
-      episodeCount: json['episodeCount'] as int,
-      episodes: (json['episodes'] as List? ?? const [])
-          .cast<Map<String, dynamic>>()
-          .map(UnifiedEpisode.fromJson)
-          .toList(),
-      hasDirectStreams: json['hasDirectStreams'] as bool? ?? false,
-      requiresResolution: json['requiresResolution'] as bool? ?? false,
+      id: asString(json['id']) ?? '',
+      providerId: asString(json['providerId']) ?? '',
+      title: asString(json['title']) ?? '',
+      subtitle: asString(json['subtitle']),
+      logoUrl: asString(json['logoUrl']),
+      episodeCount: asInt(json['episodeCount']) ?? episodes.length,
+      episodes: episodes,
+      hasDirectStreams: asBool(json['hasDirectStreams']),
+      requiresResolution: asBool(json['requiresResolution']),
     );
   }
 }
@@ -240,30 +242,23 @@ class UnifiedEpisode {
 
   factory UnifiedEpisode.fromJson(Map<String, dynamic> json) {
     return UnifiedEpisode(
-      id: json['id'] as String,
-      ordinal: json['ordinal'] as int,
-      title: json['title'] as String,
-      duration: json['duration'] as int?,
-      posterUrl: json['posterUrl'] as String?,
-      hls480: json['hls480'] as String?,
-      hls720: json['hls720'] as String?,
-      hls1080: json['hls1080'] as String?,
-      openingStart: json['openingStart'] as int?,
-      openingStop: json['openingStop'] as int?,
-      endingStart: json['endingStart'] as int?,
-      endingStop: json['endingStop'] as int?,
-      embedUrl: json['embedUrl'] as String?,
-      embedLabel: json['embedLabel'] as String?,
-      resolverSource: json['resolverSource'] as String?,
-      resolverId: json['resolverId'] as String?,
-      streamHeaders: _stringMap(json['streamHeaders']),
-    );
-  }
-
-  static Map<String, String> _stringMap(Object? value) {
-    if (value is! Map) return const {};
-    return value.map(
-      (key, item) => MapEntry(key.toString(), item.toString()),
+      id: asString(json['id']) ?? '',
+      ordinal: asInt(json['ordinal']) ?? 1,
+      title: asString(json['title']) ?? '',
+      duration: asInt(json['duration']),
+      posterUrl: asString(json['posterUrl']),
+      hls480: asString(json['hls480']),
+      hls720: asString(json['hls720']),
+      hls1080: asString(json['hls1080']),
+      openingStart: asInt(json['openingStart']),
+      openingStop: asInt(json['openingStop']),
+      endingStart: asInt(json['endingStart']),
+      endingStop: asInt(json['endingStop']),
+      embedUrl: asString(json['embedUrl']),
+      embedLabel: asString(json['embedLabel']),
+      resolverSource: asString(json['resolverSource']),
+      resolverId: asString(json['resolverId']),
+      streamHeaders: asStringMap(json['streamHeaders']),
     );
   }
 }
