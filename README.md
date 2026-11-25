@@ -65,7 +65,7 @@ Targets **Windows, Linux, Android, and Web**.
 | Platform | Status | Notes |
 |----------|--------|-------|
 | **Web**  | ✅ Works | HLS via bundled `hls.js`; poster images use HTML `<img>` platform-view to bypass missing CORS. |
-| **Linux** | ✅ Works | Requires system `libmpv.so.2`. Vendored `media_kit` 1.2.6 disables mpv Lua scripts to avoid a `console.lua` SIGSEGV on some distros. |
+| **Linux** | ✅ Works | Requires system `libmpv.so.2`. Vendored `media_kit` 1.2.6 disables mpv Lua scripts to avoid a `console.lua` SIGSEGV on some distros; vendored `media_kit_video` 2.0.1 fixes the software-rendering fallback that caused constant stutter. |
 | **Windows** | ⚠️ Source-compatible | Cannot be built on Linux; CI or a Windows machine needed. |
 | **Android** | ✅ Builds | Release APK builds with the Android SDK/NDK; playback uses device codecs, with hardware-decoding presets available in settings. |
 
@@ -182,6 +182,15 @@ lib/
   `mpv_initialize()` to avoid `console.lua` SIGSEGV in the `lua/console`
   thread on some systems (mpv 0.41 + libluajit 5.1). See
   `third_party/media_kit/PATCHES.md` for upgrade procedure.
+- **Linux video rendering fix**: `third_party/media_kit_video/` vendors
+  `media_kit_video` 2.0.1 with a patched `linux/video_output.cc`. Upstream
+  2.0.1 calls `eglGetCurrentContext()` on the GTK platform thread, gets
+  `EGL_NO_CONTEXT`, and silently falls back to software rendering
+  (`S/W rendering`), which stutters at any decoder setting. The patch
+  creates a dedicated EGL context and pbuffer for libmpv. After playback
+  starts, the log should contain
+  `H/W rendering with dedicated EGL context.` and `hwdec-current=vaapi`
+  instead of `vaapi-copy`. See `third_party/media_kit_video/PATCHES.md`.
 
 ---
 

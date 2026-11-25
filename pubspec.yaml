@@ -33,9 +33,11 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 dependency_overrides:
-  # локальная копия с патчем для linux, см. third_party/media_kit/PATCHES.md
+  # локальные копии с патчами для linux, см. third_party/*/PATCHES.md
   media_kit:
     path: third_party/media_kit
+  media_kit_video:
+    path: third_party/media_kit_video
 
 flutter:
   uses-material-design: true
