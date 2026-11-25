@@ -23,16 +23,22 @@ Targets **Windows, Linux, Android, and Web**.
   смотрю, просмотренно), favourite toggle, related releases in a distinct
   panel, and a "воспроизвести" bottom sheet with real source names.
 - **Multi-source playback**: real source names in the picker —
-  `anilibria` (one grouped studio track), `animevost`, `anidub` and Kodik
-  (when configured). Scraped sources resolve MP4/HLS lazily on play.
-  The picker switches the source automatically when a different voice is
-  chosen.
+  `anilibria`, `yani`, `kodik`, `hdrezka`, `animevost`, `sameband` and
+  `anilibme`. Scraped sources resolve MP4/HLS lazily on play, Kodik
+  episodes are grouped by season, and the picker switches the source
+  automatically when a different voice is chosen.
 - **Player**: full-screen, HLS via `media_kit`, custom controls,
   seek/volume/speed/quality, episode picker, skip opening/ending,
   progress save, keyboard shortcuts, immersive mobile mode,
-  error/loading/completed states.
-- **About page**: branding, data/video sources, library privacy and
-  disclaimer live on `/about` instead of the home screen.
+  error/loading/completed states. Playback presets for hardware
+  decoding (auto / compatibility / copy / CPU), network cache size and
+  preferred quality are available both on the `/about` "видео" tab and
+  from the speedometer button in the player; they apply without
+  restarting the episode.
+- **About page**: branding, data/video sources, playback presets,
+  library privacy and disclaimer live on `/about` instead of the home
+  screen. Bookmarks and favourites update instantly across the details
+  page, cards and the library.
 - **Offline-first caching**: API responses cached in memory + disk
   (`shared_preferences`), library state persists across restarts.
 - **All UI lowercase**; **Unbounded** headings, **Onest** body.
@@ -61,7 +67,7 @@ Targets **Windows, Linux, Android, and Web**.
 | **Web**  | ✅ Works | HLS via bundled `hls.js`; poster images use HTML `<img>` platform-view to bypass missing CORS. |
 | **Linux** | ✅ Works | Requires system `libmpv.so.2`. Vendored `media_kit` 1.2.6 disables mpv Lua scripts to avoid a `console.lua` SIGSEGV on some distros. |
 | **Windows** | ⚠️ Source-compatible | Cannot be built on Linux; CI or a Windows machine needed. |
-| **Android** | ⚠️ Source-compatible | Requires Android SDK/NDK; untested locally. |
+| **Android** | ✅ Builds | Release APK builds with the Android SDK/NDK; playback uses device codecs, with hardware-decoding presets available in settings. |
 
 ---
 

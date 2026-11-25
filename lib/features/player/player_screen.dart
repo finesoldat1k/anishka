@@ -1068,6 +1068,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   nextLabel: _nextEpisode == null
                       ? null
                       : 'серия ${_nextEpisode!.ordinal}',
+                  onSettings: () => unawaited(_openPlaybackSettings()),
+                  onEmbed:
+                      !_isEmbedPlayback &&
+                          episode != null &&
+                          _voice != null &&
+                          _canEmbed(episode)
+                      ? () => unawaited(_startEmbed(episode, _voice!))
+                      : null,
                 ),
                 _SkipButton(
                   position: _position,
@@ -2168,6 +2176,8 @@ class _CenterOverlay extends StatelessWidget {
     required this.onNext,
     required this.onPickEpisode,
     required this.nextLabel,
+    required this.onSettings,
+    required this.onEmbed,
     this.onExternal,
   });
 
@@ -2183,6 +2193,8 @@ class _CenterOverlay extends StatelessWidget {
   final VoidCallback? onNext;
   final VoidCallback onPickEpisode;
   final String? nextLabel;
+  final VoidCallback onSettings;
+  final VoidCallback? onEmbed;
   final VoidCallback? onExternal;
 
   @override
@@ -2208,6 +2220,21 @@ class _CenterOverlay extends StatelessWidget {
             onTap: onPickEpisode,
             height: 44,
           ),
+          GradientButton(
+            label: 'настройки видео',
+            icon: AppIcons.speedometer,
+            ghost: true,
+            onTap: onSettings,
+            height: 44,
+          ),
+          if (onEmbed != null)
+            GradientButton(
+              label: 'встроенный плеер',
+              icon: AppIcons.playCircle,
+              ghost: true,
+              onTap: onEmbed!,
+              height: 44,
+            ),
           if (onExternal != null)
             GradientButton(
               label: 'открыть в браузере',
