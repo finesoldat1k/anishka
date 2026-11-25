@@ -26,11 +26,7 @@ import 'widgets/trailer_section.dart';
 import 'related_screen.dart';
 
 class DetailsScreen extends StatefulWidget {
-  const DetailsScreen({
-    super.key,
-    required this.shikimoriId,
-    this.preview,
-  });
+  const DetailsScreen({super.key, required this.shikimoriId, this.preview});
 
   final int shikimoriId;
 
@@ -180,23 +176,26 @@ class _DetailsScreenState extends State<DetailsScreen> {
 
   void _toggleFavorite() {
     final release = _librarySnapshot;
-    if (release != null) {
-      context.read<LibraryStore>().toggleFavorite(release);
-    }
+    if (release == null) return;
+    context.read<LibraryStore>().toggleFavorite(release);
+    // The store updates synchronously; rebuilding the page here makes the
+    // heart flip in the same frame even if a provider notification is
+    // coalesced with an in-flight refresh.
+    setState(() {});
   }
 
   void _selectStatus(CollectionStatus status) {
     final release = _librarySnapshot;
-    if (release != null) {
-      context.read<LibraryStore>().setStatus(release, status);
-    }
+    if (release == null) return;
+    context.read<LibraryStore>().setStatus(release, status);
+    setState(() {});
   }
 
   void _removeStatus() {
     final release = _librarySnapshot;
-    if (release != null) {
-      context.read<LibraryStore>().setStatus(release, null);
-    }
+    if (release == null) return;
+    context.read<LibraryStore>().setStatus(release, null);
+    setState(() {});
   }
 
   @override
@@ -266,7 +265,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                               padding,
                               0,
                             ),
-child: RelatedReleases(
+                            child: RelatedReleases(
                               items: _anime!.related,
                               onOpen: _openRelated,
                               onViewAll: () => context.push(
@@ -285,28 +284,33 @@ child: RelatedReleases(
                         ),
                       ),
                     ),
-                    // Trailer section below related releases
-                    if (_anime!.shikimoriAnime.trailerYoutubeId != null &&
-                        _anime!.shikimoriAnime.trailerYoutubeId!.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1280),
-                            child: Padding(
-                              padding: EdgeInsets.fromLTRB(padding, 16, padding, 0),
-                              child: TrailerSection(
-                                trailerYoutubeId:
-                                    _anime!.shikimoriAnime.trailerYoutubeId,
-                                trailerThumbnail:
-                                    _anime!.shikimoriAnime.trailerThumbnail,
-                                trailerTitle: _anime!.displayTitle,
-                                compact: compact,
-                              ),
+                  // Trailer section below related releases
+                  if (_anime!.shikimoriAnime.trailerYoutubeId != null &&
+                      _anime!.shikimoriAnime.trailerYoutubeId!.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1280),
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              padding,
+                              16,
+                              padding,
+                              0,
+                            ),
+                            child: TrailerSection(
+                              trailerYoutubeId:
+                                  _anime!.shikimoriAnime.trailerYoutubeId,
+                              trailerThumbnail:
+                                  _anime!.shikimoriAnime.trailerThumbnail,
+                              trailerTitle: _anime!.displayTitle,
+                              compact: compact,
                             ),
                           ),
                         ),
                       ),
-                    SliverToBoxAdapter(
+                    ),
+                  SliverToBoxAdapter(
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 1280),

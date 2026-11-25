@@ -6,6 +6,7 @@ import 'core/services/app_services.dart';
 import 'core/repository/unified_repository.dart';
 import 'core/router/app_router.dart';
 import 'core/storage/library_store.dart';
+import 'core/storage/playback_settings_store.dart';
 import 'core/storage/search_store.dart';
 import 'core/theme/app_scroll_behavior.dart';
 import 'core/theme/app_theme.dart';
@@ -17,11 +18,13 @@ class AnishkaApp extends StatefulWidget {
     required this.services,
     required this.library,
     required this.search,
+    required this.playback,
   });
 
   final AppServices services;
   final LibraryStore library;
   final SearchStore search;
+  final PlaybackSettingsStore playback;
 
   @override
   State<AnishkaApp> createState() => _AnishkaAppState();
@@ -44,6 +47,9 @@ class _AnishkaAppState extends State<AnishkaApp> {
         Provider<UnifiedRepository>.value(value: widget.services.repository),
         ChangeNotifierProvider<LibraryStore>.value(value: widget.library),
         ChangeNotifierProvider<SearchStore>.value(value: widget.search),
+        ChangeNotifierProvider<PlaybackSettingsStore>.value(
+          value: widget.playback,
+        ),
       ],
       child: MaterialApp.router(
         title: 'анишка',

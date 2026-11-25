@@ -64,7 +64,7 @@ void main() {
     await tester.tap(find.text('в планах'));
     await tester.pumpAndSettle();
 
-    expect(library.statusOf(snapshot.id), CollectionStatus.planned);
+    expect(library.statusOf(snapshot.libraryId), CollectionStatus.planned);
     expect(find.text('в планах'), findsOneWidget);
   });
 
@@ -117,7 +117,7 @@ void main() {
     await tester.tap(find.text('в избранное'));
     await tester.pumpAndSettle();
 
-    expect(library.isFavorite(snapshot.id), isTrue);
+    expect(library.isFavorite(snapshot.libraryId), isTrue);
     expect(find.text('в избранном'), findsOneWidget);
   });
 }

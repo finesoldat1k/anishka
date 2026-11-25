@@ -72,7 +72,7 @@ extension ShikimoriAnimeCardItem on ShikimoriAnime {
 
   bool get cardIsOngoing => status == 'ongoing';
 
-  int? get cardLibraryId => null;
+  int? get cardLibraryId => id;
 
   bool get cardHasSources => false;
 }
@@ -100,7 +100,7 @@ extension ShikimoriAnimeDetailsCardItem on ShikimoriAnimeDetails {
 
   bool get cardIsOngoing => status == 'ongoing';
 
-  int? get cardLibraryId => null;
+  int? get cardLibraryId => id;
 
   bool get cardHasSources => false;
 }

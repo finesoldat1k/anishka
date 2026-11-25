@@ -36,6 +36,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    lint {
+        // AGP 9.x lint crashes while parsing a generated Kotlin file from
+        // webview_flutter_android (JavaDocParser NoSuchMethodError). Release
+        // lint is advisory, so a lint-tool bug must not block the APK build.
+        checkReleaseBuilds = false
+    }
 }
 
 kotlin {

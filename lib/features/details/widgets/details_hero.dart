@@ -54,10 +54,10 @@ class DetailsHero extends StatelessWidget {
     final library = context.watch<LibraryStore>();
     final primaryRelease = _primaryRelease;
     final status = primaryRelease != null
-        ? library.statusOf(primaryRelease.id)
+        ? library.statusOf(primaryRelease.libraryId)
         : null;
     final favorite = primaryRelease != null
-        ? library.isFavorite(primaryRelease.id)
+        ? library.isFavorite(primaryRelease.libraryId)
         : false;
     final progress = primaryRelease != null
         ? library.progressFor(primaryRelease.id)

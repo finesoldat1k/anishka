@@ -8,6 +8,7 @@ import '../../core/api/service_info.dart';
 import '../../core/cache/cache_service.dart';
 import '../../core/config/image_proxy.dart';
 import '../../core/services/app_services.dart';
+import '../../core/storage/playback_settings_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../ui/widgets/brand_mark.dart';
@@ -20,7 +21,8 @@ class AboutScreen extends StatefulWidget {
   State<AboutScreen> createState() => _AboutScreenState();
 }
 
-class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStateMixin {
+class _AboutScreenState extends State<AboutScreen>
+    with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   CacheStats _stats = CacheStats.empty;
   bool _loadingStats = true;
@@ -32,7 +34,7 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _refreshStats();
   }
 
@@ -78,7 +80,9 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
   Future<void> _toggleProxy(bool value) async {
     setState(() => _proxyEnabled = value);
     ImageProxyConfig.enabled = value;
-    _showSnack(value ? 'прокси изображений включён' : 'прокси изображений выключен');
+    _showSnack(
+      value ? 'прокси изображений включён' : 'прокси изображений выключен',
+    );
   }
 
   Future<void> _setPreferredProxy(String? proxyId) async {
@@ -91,7 +95,10 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg, style: const TextStyle(fontFamily: AppFonts.body, fontSize: 13)),
+        content: Text(
+          msg,
+          style: const TextStyle(fontFamily: AppFonts.body, fontSize: 13),
+        ),
         backgroundColor: AppColors.surfaceHigh,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
@@ -163,6 +170,8 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
                     ),
                     child: TabBar(
                       controller: _tabController,
+                      isScrollable: compact,
+                      tabAlignment: compact ? TabAlignment.start : null,
                       indicatorSize: TabBarIndicatorSize.tab,
                       dividerColor: Colors.transparent,
                       labelColor: AppColors.text,
@@ -178,10 +187,26 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
                         fontSize: 12.5,
                       ),
                       tabs: const [
-                        Tab(icon: Icon(AppIcons.speedometer, size: 16), text: 'сервисы'),
-                        Tab(icon: Icon(AppIcons.images, size: 16), text: 'изображения'),
-                        Tab(icon: Icon(AppIcons.list, size: 16), text: 'приоритеты'),
-                        Tab(icon: Icon(AppIcons.info, size: 16), text: 'о приложении'),
+                        Tab(
+                          icon: Icon(AppIcons.speedometer, size: 16),
+                          text: 'сервисы',
+                        ),
+                        Tab(
+                          icon: Icon(AppIcons.video, size: 16),
+                          text: 'видео',
+                        ),
+                        Tab(
+                          icon: Icon(AppIcons.images, size: 16),
+                          text: 'изображения',
+                        ),
+                        Tab(
+                          icon: Icon(AppIcons.list, size: 16),
+                          text: 'приоритеты',
+                        ),
+                        Tab(
+                          icon: Icon(AppIcons.info, size: 16),
+                          text: 'о приложении',
+                        ),
                       ],
                     ),
                   ),
@@ -199,6 +224,10 @@ class _AboutScreenState extends State<AboutScreen> with SingleTickerProviderStat
                           health: _health,
                           checking: _checkingHealth,
                           onCheckHealth: _checkHealth,
+                        ),
+                        _VideoTab(
+                          compact: compact,
+                          settings: context.watch<PlaybackSettingsStore>(),
                         ),
                         _ImagesTab(
                           compact: compact,
@@ -530,9 +559,11 @@ class _ServicesTab extends StatelessWidget {
           const SizedBox(height: 18),
           _HealthBar(
             checking: checking,
-            ok: (health?.metadata.where((h) => h.ok).length ?? 0) +
+            ok:
+                (health?.metadata.where((h) => h.ok).length ?? 0) +
                 (health?.sources.where((h) => h.ok).length ?? 0),
-            total: (health?.metadata.length ?? 0) + (health?.sources.length ?? 0),
+            total:
+                (health?.metadata.length ?? 0) + (health?.sources.length ?? 0),
             onCheck: onCheckHealth,
           ),
         ],
@@ -628,7 +659,9 @@ class _ServiceTile extends StatelessWidget {
     final dotColor = ok == null
         ? AppColors.textFaint
         : (ok ? AppColors.planned : AppColors.textFaint);
-    final latencyText = latency != null ? '${latency!.inMilliseconds} мс' : null;
+    final latencyText = latency != null
+        ? '${latency!.inMilliseconds} мс'
+        : null;
 
     return InkWell(
       borderRadius: BorderRadius.circular(10),
@@ -765,11 +798,7 @@ class _HealthBar extends StatelessWidget {
                         color: AppColors.planned,
                       ),
                     )
-                  : Icon(
-                      AppIcons.compass,
-                      size: 16,
-                      color: statusColor,
-                    ),
+                  : Icon(AppIcons.compass, size: 16, color: statusColor),
             ),
           ),
           const SizedBox(width: 12),
@@ -782,8 +811,8 @@ class _HealthBar extends StatelessWidget {
                   checking
                       ? 'проверяем источники…'
                       : total == 0
-                          ? 'нет данных о сервисах'
-                          : 'работают $ok из $total сервисов',
+                      ? 'нет данных о сервисах'
+                      : 'работают $ok из $total сервисов',
                   style: TextStyle(
                     fontFamily: AppFonts.body,
                     fontSize: 12.5,
@@ -853,14 +882,17 @@ class _ImagesTab extends StatelessWidget {
               children: [
                 _SettingRow(
                   title: 'включить прокси',
-                  subtitle: 'обходит CORS для постеров shikimori и других источников',
+                  subtitle:
+                      'обходит CORS для постеров shikimori и других источников',
                   trailing: Transform.scale(
                     scale: 0.85,
                     child: Switch.adaptive(
                       value: proxyEnabled,
                       onChanged: onProxyToggle,
                       activeThumbColor: AppColors.planned,
-                      activeTrackColor: AppColors.planned.withValues(alpha: 0.5),
+                      activeTrackColor: AppColors.planned.withValues(
+                        alpha: 0.5,
+                      ),
                     ),
                   ),
                 ),
@@ -876,14 +908,19 @@ class _ImagesTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 if (proxyEnabled)
-                  _ProxyList(proxies: ImageProxyConfig.proxies, current: preferredProxy)
+                  _ProxyList(
+                    proxies: ImageProxyConfig.proxies,
+                    current: preferredProxy,
+                  )
                 else
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: AppColors.surface.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+                      border: Border.all(
+                        color: AppColors.border.withValues(alpha: 0.5),
+                      ),
                     ),
                     child: Text(
                       'прокси выключен — постеры могут не загружаться из-за CORS',
@@ -957,7 +994,10 @@ class _ImagesTab extends StatelessWidget {
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    _MetaText(icon: AppIcons.images, label: '${stats.count} записей'),
+                    _MetaText(
+                      icon: AppIcons.images,
+                      label: '${stats.count} записей',
+                    ),
                     const SizedBox(width: 16),
                     _MetaText(
                       icon: AppIcons.clockCounterClockwise,
@@ -969,6 +1009,172 @@ class _ImagesTab extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _VideoTab extends StatelessWidget {
+  const _VideoTab({required this.compact, required this.settings});
+
+  final bool compact;
+  final PlaybackSettingsStore settings;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        children: [
+          _Panel(
+            title: 'декодирование',
+            icon: AppIcons.speedometer,
+            compact: compact,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SettingRow(
+                  title: 'пресет декодера',
+                  subtitle: settings.decoder.description,
+                  trailing: _SettingDropdown<VideoDecoderPreset>(
+                    value: settings.decoder,
+                    items: [
+                      for (final preset in VideoDecoderPreset.values)
+                        (value: preset, label: preset.label),
+                    ],
+                    onChanged: settings.setDecoder,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _SettingRow(
+                  title: 'буфер',
+                  subtitle: settings.buffer.description,
+                  trailing: _SettingDropdown<VideoBufferPreset>(
+                    value: settings.buffer,
+                    items: [
+                      for (final preset in VideoBufferPreset.values)
+                        (value: preset, label: preset.label),
+                    ],
+                    onChanged: settings.setBuffer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _Panel(
+            title: 'качество',
+            icon: AppIcons.highDefinition,
+            compact: compact,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SettingRow(
+                  title: 'предпочитаемое качество',
+                  subtitle: settings.quality.description,
+                  trailing: _SettingDropdown<VideoQualityPreference>(
+                    value: settings.quality,
+                    items: [
+                      for (final preset in VideoQualityPreference.values)
+                        (value: preset, label: preset.label),
+                    ],
+                    onChanged: settings.setQuality,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.border.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: const Text(
+                    'если видео подлагивает: включите «совместимость» или '
+                    'программное декодирование, увеличьте буфер и выберите '
+                    '720p. настройки можно менять прямо в плеере — кнопка '
+                    'со спидометром в верхней панели. на web декодером '
+                    'управляет браузер, поэтому там эти пресеты не влияют '
+                    'на воспроизведение.',
+                    style: TextStyle(
+                      fontFamily: AppFonts.body,
+                      fontSize: 11,
+                      height: 1.5,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: settings.reset,
+                    icon: const Icon(
+                      AppIcons.arrowCounterClockwise,
+                      size: 15,
+                      color: AppColors.textMuted,
+                    ),
+                    label: const Text(
+                      'сбросить настройки видео',
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 11.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingDropdown<T> extends StatelessWidget {
+  const _SettingDropdown({
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final T value;
+  final List<({T value, String label})> items;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isDense: true,
+          style: const TextStyle(
+            fontFamily: AppFonts.body,
+            fontSize: 12,
+            color: AppColors.text,
+          ),
+          dropdownColor: AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(10),
+          items: [
+            for (final item in items)
+              DropdownMenuItem<T>(value: item.value, child: Text(item.label)),
+          ],
+          onChanged: (next) {
+            if (next != null) onChanged(next);
+          },
+        ),
       ),
     );
   }
@@ -1038,7 +1244,9 @@ class _ProxyDropdown extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: enabled ? AppColors.surface : AppColors.surface.withValues(alpha: 0.5),
+        color: enabled
+            ? AppColors.surface
+            : AppColors.surface.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.border),
       ),
@@ -1058,10 +1266,9 @@ class _ProxyDropdown extends StatelessWidget {
               value: null,
               child: Text('авто (рекомендуется)'),
             ),
-            ...ImageProxyConfig.proxies.map((p) => DropdownMenuItem<String>(
-              value: p.id,
-              child: Text(p.name),
-            )),
+            ...ImageProxyConfig.proxies.map(
+              (p) => DropdownMenuItem<String>(value: p.id, child: Text(p.name)),
+            ),
           ],
           onChanged: enabled ? onChanged : null,
         ),
@@ -1071,10 +1278,7 @@ class _ProxyDropdown extends StatelessWidget {
 }
 
 class _ProxyList extends StatelessWidget {
-  const _ProxyList({
-    required this.proxies,
-    required this.current,
-  });
+  const _ProxyList({required this.proxies, required this.current});
 
   final List<ImageProxyService> proxies;
   final String? current;
@@ -1083,7 +1287,8 @@ class _ProxyList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: proxies.map((p) {
-        final isCurrent = current == p.id || (current == null && p == proxies.first);
+        final isCurrent =
+            current == p.id || (current == null && p == proxies.first);
         return Container(
           margin: const EdgeInsets.only(top: 6),
           padding: const EdgeInsets.all(10),
@@ -1145,10 +1350,7 @@ class _ProxyList extends StatelessWidget {
 
 // ===== PRIORITY TAB =====
 class _PriorityTab extends StatelessWidget {
-  const _PriorityTab({
-    required this.compact,
-    required this.services,
-  });
+  const _PriorityTab({required this.compact, required this.services});
 
   final bool compact;
   final AppServices services;
@@ -1220,7 +1422,8 @@ class _PriorityTab extends StatelessWidget {
                   purpose: 'описания и рейтинги',
                   recommended: 'shikimori',
                   current: 'shikimori',
-                  description: 'Shikimori даёт описания, студии, жанры, рейтинг',
+                  description:
+                      'Shikimori даёт описания, студии, жанры, рейтинг',
                 ),
                 _PurposeRow(
                   purpose: 'постеры и обложки',
@@ -1236,12 +1439,9 @@ class _PriorityTab extends StatelessWidget {
                 ),
                 _PurposeRow(
                   purpose: 'озвучка и серии',
-                  recommended:
-                      'anilibria / yani / kodik / hdrezka / animevost / sameband / anilibme',
-                  current:
-                      'anilibria → yani → kodik → hdrezka → animevost → sameband → anilibme',
-                  description:
-                      'AniLibria — лучшее качество HLS, Yani — агрегатор, Kodik/HDRezka — крупные библиотеки озвучек, AnimeVost/SameBand/AnilibMe — прямые API',
+                  recommended: 'anilibria / yani / kodik / hdrezka / animevost / sameband / anilibme',
+                  current: 'anilibria → yani → kodik → hdrezka → animevost → sameband → anilibme',
+                  description: 'AniLibria — лучшее качество HLS, Yani — агрегатор, Kodik/HDRezka — крупные библиотеки озвучек, AnimeVost/SameBand/AnilibMe — прямые API',
                 ),
               ],
             ),
@@ -1704,8 +1904,8 @@ class _ClearButtonState extends State<_ClearButton> {
             decoration: BoxDecoration(
               color: active
                   ? (_hovered
-                      ? AppColors.planned.withValues(alpha: 0.20)
-                      : AppColors.planned.withValues(alpha: 0.12))
+                        ? AppColors.planned.withValues(alpha: 0.20)
+                        : AppColors.planned.withValues(alpha: 0.12))
                   : AppColors.surface.withValues(alpha: 0.4),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(

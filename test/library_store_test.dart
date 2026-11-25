@@ -111,4 +111,80 @@ void main() {
     store.saveProgress(releaseId: anime.id, episode: 1, voice: 'anilibria');
     expect(notifications, 3);
   });
+
+  test(
+    'temporary snapshot and playable release share one library entry',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      final store = LibraryStore(prefs);
+      final temporary = AnimeRelease.fromSnapshot({
+        'id': -7,
+        'shikimori_id': 7,
+        'alias': 'temporary',
+        'name': 'временный снапшот',
+        'is_ongoing': true,
+        'episodes_total': 12,
+      });
+      final playable = AnimeRelease.fromSnapshot({
+        'id': 7,
+        'shikimori_id': 7,
+        'alias': 'release-7',
+        'name': 'настоящий релиз',
+        'is_ongoing': true,
+        'episodes_total': 12,
+      });
+
+      store.toggleFavorite(temporary);
+      expect(store.isFavorite(7), isTrue);
+      expect(store.entryFor(-7), isNull);
+      expect(store.countFavorites(), 1);
+
+      store.syncSnapshot(playable);
+      expect(store.entryFor(7)!.anime.id, 7);
+      expect(store.entryFor(7)!.anime.displayTitle, 'настоящий релиз');
+
+      store.setStatus(playable, CollectionStatus.watching);
+      expect(store.countFavorites(), 1);
+      expect(store.statusOf(7), CollectionStatus.watching);
+
+      store.toggleFavorite(playable);
+      expect(store.isFavorite(7), isFalse);
+      expect(store.statusOf(7), CollectionStatus.watching);
+    },
+  );
+
+  test('loads legacy negative-id entries under the canonical id', () async {
+    SharedPreferences.setMockInitialValues({
+      'anishka.library.v1':
+          '[{"anime":{"id":-9,"shikimori_id":9,"alias":"legacy",'
+          '"name":"старая запись","is_ongoing":false,"episodes_total":12},'
+          '"status":"planned","favorite":true,'
+          '"updated_at":"2026-01-01T00:00:00.000"},'
+          '{"anime":{"id":9,"shikimori_id":9,"alias":"fresh",'
+          '"name":"новая запись","is_ongoing":false,"episodes_total":12},'
+          '"status":null,"favorite":false,'
+          '"updated_at":"2026-02-01T00:00:00.000"}]',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final store = LibraryStore(prefs);
+
+    expect(store.isFavorite(9), isTrue);
+    expect(store.statusOf(9), CollectionStatus.planned);
+    expect(store.entryFor(-9), isNull);
+    expect(store.all.length, 1);
+  });
+
+  test('libraryId prefers shikimoriId over temporary negative id', () {
+    final temporary = AnimeRelease.fromSnapshot({
+      'id': -3,
+      'shikimori_id': 3,
+      'alias': 'x',
+      'name': 'x',
+    });
+    final playable = release(3);
+
+    expect(temporary.libraryId, 3);
+    expect(playable.libraryId, 3);
+    expect(release(-2).libraryId, -2);
+  });
 }

@@ -116,6 +116,7 @@ class LibraryStore extends ChangeNotifier {
   final Map<int, WatchProgress> _progress = {};
 
   void _load() {
+    var migrated = false;
     final rawLibrary = _prefs.getString(_libraryKey);
     if (rawLibrary != null && rawLibrary.isNotEmpty) {
       try {
@@ -126,12 +127,34 @@ class LibraryStore extends ChangeNotifier {
           final entry = LibraryEntry.fromJson(
             item.map((key, value) => MapEntry(key.toString(), value)),
           );
-          if (entry != null) _entries[entry.anime.id] = entry;
+          if (entry != null) {
+            // Older versions stored temporary snapshots under a negative id.
+            // Re-home them under the canonical Shikimori id so favourite and
+            // status lookups never depend on whether sources have loaded.
+            final key = entry.anime.libraryId;
+            final existing = _entries[key];
+            _entries[key] = existing == null
+                ? entry
+                : LibraryEntry(
+                    anime:
+                        entry.anime.episodes.isNotEmpty ||
+                            existing.anime.episodes.isEmpty
+                        ? entry.anime
+                        : existing.anime,
+                    status: entry.status ?? existing.status,
+                    favorite: entry.favorite || existing.favorite,
+                    updatedAt: entry.updatedAt.isAfter(existing.updatedAt)
+                        ? entry.updatedAt
+                        : existing.updatedAt,
+                  );
+            if (key != entry.anime.id) migrated = true;
+          }
         }
       } catch (_) {
         // повреждённое локальное хранилище не должно ломать запуск.
       }
     }
+    if (migrated) _persistLibrary();
 
     final rawProgress = _prefs.getString(_progressKey);
     if (rawProgress != null && rawProgress.isNotEmpty) {
@@ -185,28 +208,30 @@ class LibraryStore extends ChangeNotifier {
       _progress[id]?.voice ?? fallback;
 
   void syncSnapshot(AnimeRelease anime) {
-    final current = _entries[anime.id];
+    final key = anime.libraryId;
+    final current = _entries[key];
     if (current == null) return;
-    _entries[anime.id] = current.copyWith(anime: anime);
+    _entries[key] = current.copyWith(anime: anime);
     _persistLibrary();
     notifyListeners();
   }
 
   void setStatus(AnimeRelease anime, CollectionStatus? status) {
-    final current = _entries[anime.id];
+    final key = anime.libraryId;
+    final current = _entries[key];
     if (status == null) {
       if (current == null) return;
       if (!current.favorite) {
-        _entries.remove(anime.id);
+        _entries.remove(key);
       } else {
-        _entries[anime.id] = current.copyWith(
+        _entries[key] = current.copyWith(
           anime: anime,
           clearStatus: true,
           updatedAt: DateTime.now(),
         );
       }
     } else {
-      _entries[anime.id] =
+      _entries[key] =
           (current ??
                   LibraryEntry(
                     anime: anime,
@@ -225,9 +250,10 @@ class LibraryStore extends ChangeNotifier {
   }
 
   void toggleFavorite(AnimeRelease anime) {
-    final current = _entries[anime.id];
+    final key = anime.libraryId;
+    final current = _entries[key];
     if (current == null) {
-      _entries[anime.id] = LibraryEntry(
+      _entries[key] = LibraryEntry(
         anime: anime,
         status: null,
         favorite: true,
@@ -235,16 +261,16 @@ class LibraryStore extends ChangeNotifier {
       );
     } else if (current.favorite) {
       if (current.status == null) {
-        _entries.remove(anime.id);
+        _entries.remove(key);
       } else {
-        _entries[anime.id] = current.copyWith(
+        _entries[key] = current.copyWith(
           anime: anime,
           favorite: false,
           updatedAt: DateTime.now(),
         );
       }
     } else {
-      _entries[anime.id] = current.copyWith(
+      _entries[key] = current.copyWith(
         anime: anime,
         favorite: true,
         updatedAt: DateTime.now(),
@@ -254,16 +280,18 @@ class LibraryStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Migrate a temporary Shikimori-only entry (negative id) to the real
-  /// playable release once sources have loaded.
+  /// Migrate a legacy temporary Shikimori-only entry (negative id) to the
+  /// real playable release. New entries are already stored under the canonical
+  /// id, so this is a no-op for them.
   void adoptEntry(int temporaryId, AnimeRelease release) {
     final temporary = _entries.remove(temporaryId);
     if (temporary == null) return;
-    final current = _entries[release.id];
+    final key = release.libraryId;
+    final current = _entries[key];
     final favorite = temporary.favorite || (current?.favorite ?? false);
     final status = current?.status ?? temporary.status;
     if (status != null || favorite) {
-      _entries[release.id] = LibraryEntry(
+      _entries[key] = LibraryEntry(
         anime: release,
         status: status,
         favorite: favorite,

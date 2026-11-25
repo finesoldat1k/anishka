@@ -19,6 +19,7 @@ import '../../core/models/voiceover.dart';
 import '../../core/repository/unified_repository.dart';
 import '../../core/services/app_services.dart';
 import '../../core/storage/library_store.dart';
+import '../../core/storage/playback_settings_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/errors.dart';
@@ -53,6 +54,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   late final UnifiedRepository _repository;
   late final LibraryStore _library;
+  late final PlaybackSettingsStore _playbackSettings;
   final _focusNode = FocusNode(debugLabel: 'player');
 
   Player? _player;
@@ -157,6 +159,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.initState();
     _repository = context.read<AppServices>().repository;
     _library = context.read<LibraryStore>();
+    _playbackSettings = context.read<PlaybackSettingsStore>();
     if (_isMobile) {
       unawaited(
         SystemChrome.setPreferredOrientations(const [
@@ -230,12 +233,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
 
         final qualities = _qualityOptions(episode);
-        final quality = qualities.isEmpty ? 'auto' : qualities.first;
+        final quality = _playbackSettings.preferredQuality(qualities);
         setState(() {
           _release = release;
           _episode = episode;
           _voice = provided.voiceover;
-          _quality = quality;
+          _quality = quality.isEmpty ? 'auto' : quality;
           _loadingRelease = false;
           _loadError = null;
         });
@@ -279,13 +282,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
         widget.voiceId ?? _library.voiceFor(release.id),
       );
       final qualities = _qualityOptions(episode);
-      final quality = qualities.isEmpty ? '1080' : qualities.first;
+      final quality = _playbackSettings.preferredQuality(qualities);
 
       setState(() {
         _release = release;
         _episode = episode;
         _voice = voice;
-        _quality = quality;
+        _quality = quality.isEmpty ? 'auto' : quality;
         _loadingRelease = false;
         _loadError = null;
       });
@@ -304,11 +307,56 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final existing = _player;
     if (existing != null) return existing;
 
-    final player = Player();
+    final player = Player(
+      configuration: PlayerConfiguration(
+        title: 'анишка',
+        bufferSize: _playbackSettings.bufferBytes,
+      ),
+    );
     _player = player;
-    _controller = VideoController(player);
+    _controller = VideoController(
+      player,
+      configuration: VideoControllerConfiguration(
+        hwdec: _playbackSettings.hwdec,
+        enableHardwareAcceleration: _playbackSettings.hardwareAcceleration,
+      ),
+    );
     _listenTo(player);
+    unawaited(_applyPlaybackProperties(player));
     return player;
+  }
+
+  /// Push decoder/cache preferences into libmpv. Most of these options can be
+  /// changed while a video is playing, so switching a preset in the player
+  /// takes effect without reopening the episode.
+  Future<void> _applyPlaybackProperties([Player? target]) async {
+    final player = target ?? _player;
+    if (player == null || kIsWeb) return;
+
+    final buffer = _playbackSettings.bufferBytes;
+    final properties = <String, String>{
+      'hwdec': _playbackSettings.hwdec,
+      'cache': 'yes',
+      'cache-secs': '${_playbackSettings.cacheSeconds}',
+      'demuxer-readahead-secs': '${_playbackSettings.cacheSeconds}',
+      'demuxer-max-bytes': '$buffer',
+      'demuxer-max-back-bytes': '${buffer ~/ 2}',
+    };
+    try {
+      // `setProperty` exists on the native player only. Using `dynamic` keeps
+      // the web build free of the FFI-only class while `kIsWeb` guards the
+      // call at runtime.
+      final dynamic native = player.platform;
+      for (final entry in properties.entries) {
+        try {
+          await native.setProperty(entry.key, entry.value);
+        } catch (_) {
+          // Unknown option on this platform — keep applying the rest.
+        }
+      }
+    } catch (_) {
+      // A platform without native mpv properties must not break playback.
+    }
   }
 
   void _listenTo(Player player) {
@@ -419,7 +467,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       return;
     }
 
-    final desired = quality ?? _quality;
+    final preferred = _playbackSettings.preferredQuality(qualities);
+    final desired = quality ?? (preferred.isEmpty ? _quality : preferred);
     final resolved = qualities.contains(desired) ? desired : qualities.first;
 
     ResolvedStream? stream;
@@ -646,9 +695,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final episode = _episode;
     final voice = _voice;
     if (episode == null || voice == null) return;
-    _resolvedStreams.removeWhere(
-      (key, _) => key.startsWith('${episode.id}::'),
-    );
+    _resolvedStreams.removeWhere((key, _) => key.startsWith('${episode.id}::'));
     _embedFallback = false;
     await _startPlayback(episode, voice, quality: _quality);
   }
@@ -747,6 +794,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  Future<void> _openPlaybackSettings() async {
+    _hideTimer?.cancel();
+    setState(() => _controlsVisible = true);
+    final episode = _episode;
+    final qualities = episode == null
+        ? const <String>[]
+        : _qualityOptions(episode);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      isScrollControlled: true,
+      builder: (context) => _PlaybackSettingsSheet(
+        settings: _playbackSettings,
+        qualities: qualities,
+        currentQuality: _quality,
+        onChanged: () => unawaited(_applyPlaybackProperties()),
+        onQualitySelected: (value) {
+          if (_isEmbedPlayback) return;
+          if (qualities.contains(value) && value != _quality) {
+            unawaited(_switchQuality(value));
+          }
+        },
+      ),
+    );
+    if (!mounted) return;
+    _revealControls();
+    _focusNode.requestFocus();
+  }
+
   Future<void> _setVolume(double value) async {
     final clamped = value.clamp(0.0, 100.0).toDouble();
     if (clamped > 0) _lastVolume = clamped;
@@ -829,9 +907,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       context.pop();
     } else {
       final shikimoriId = widget.source?.shikimoriAnime.id ?? 0;
-      context.go(
-        shikimoriId > 0 ? '/anime/shikimori/$shikimoriId' : '/',
-      );
+      context.go(shikimoriId > 0 ? '/anime/shikimori/$shikimoriId' : '/');
     }
   }
 
@@ -980,7 +1056,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   onPlay: _togglePlay,
                   onReplay: _replay,
                   onRetry: _retryPlayback,
-                  onExternal: !EmbedFrame.isEmbedSupported &&
+                  onExternal:
+                      !EmbedFrame.isEmbedSupported &&
                           episode?.embedUrl?.isNotEmpty == true
                       ? () => unawaited(_openExternal())
                       : null,
@@ -1012,6 +1089,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   onBack: _goBack,
                   onQuality: (value) => unawaited(_switchQuality(value)),
                   onEpisodes: _openEpisodePicker,
+                  onSettings: () => unawaited(_openPlaybackSettings()),
                 ),
                 _BottomBar(
                   visible: _controlsVisible,
@@ -1173,6 +1251,274 @@ class _EmbedPlayerScaffold extends StatelessWidget {
   }
 }
 
+class _PlaybackSettingsSheet extends StatelessWidget {
+  const _PlaybackSettingsSheet({
+    required this.settings,
+    required this.qualities,
+    required this.currentQuality,
+    required this.onChanged,
+    required this.onQualitySelected,
+  });
+
+  final PlaybackSettingsStore settings;
+  final List<String> qualities;
+  final String currentQuality;
+  final VoidCallback onChanged;
+  final ValueChanged<String> onQualitySelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: AppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 40,
+                  offset: const Offset(0, 18),
+                ),
+              ],
+            ),
+            child: AnimatedBuilder(
+              animation: settings,
+              builder: (context, _) {
+                return SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 14),
+                          decoration: BoxDecoration(
+                            color: AppColors.borderStrong,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          const Icon(
+                            AppIcons.speedometer,
+                            size: 18,
+                            color: AppColors.accentBright,
+                          ),
+                          const SizedBox(width: 9),
+                          const Expanded(
+                            child: Text(
+                              'видео',
+                              style: TextStyle(
+                                fontFamily: AppFonts.display,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                                letterSpacing: -0.2,
+                                color: AppColors.text,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              settings.reset();
+                              onChanged();
+                              final target = settings.preferredQuality(
+                                qualities,
+                              );
+                              if (target.isNotEmpty) onQualitySelected(target);
+                            },
+                            child: const Text(
+                              'сбросить',
+                              style: TextStyle(
+                                fontFamily: AppFonts.body,
+                                fontSize: 11.5,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Text(
+                        'настройки применяются сразу, без перезапуска серии',
+                        style: TextStyle(
+                          fontFamily: AppFonts.body,
+                          fontSize: 10.5,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      _sectionTitle('декодирование'),
+                      for (final preset in VideoDecoderPreset.values)
+                        _option(
+                          title: preset.label,
+                          subtitle: preset.description,
+                          selected: settings.decoder == preset,
+                          onTap: () {
+                            settings.setDecoder(preset);
+                            onChanged();
+                          },
+                        ),
+                      _sectionTitle('буфер'),
+                      for (final preset in VideoBufferPreset.values)
+                        _option(
+                          title: preset.label,
+                          subtitle: preset.description,
+                          selected: settings.buffer == preset,
+                          onTap: () {
+                            settings.setBuffer(preset);
+                            onChanged();
+                          },
+                        ),
+                      if (qualities.isNotEmpty) ...[
+                        _sectionTitle('качество'),
+                        for (final preset in VideoQualityPreference.values)
+                          _option(
+                            title: preset.label,
+                            subtitle: preset.quality == null
+                                ? 'сейчас: ${_qualityLabel(currentQuality)}'
+                                : preset.description,
+                            selected: settings.quality == preset,
+                            enabled:
+                                preset.quality == null ||
+                                qualities.contains(preset.quality),
+                            onTap: () {
+                              settings.setQuality(preset);
+                              onChanged();
+                              final target = settings.preferredQuality(
+                                qualities,
+                              );
+                              if (target.isNotEmpty) onQualitySelected(target);
+                            },
+                          ),
+                      ],
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceHigh.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: const Text(
+                          'если видео дёргается или рассыпается на квадраты — '
+                          'включите «совместимость» и увеличенный буфер. '
+                          'если картинка зелёная или чёрная — попробуйте '
+                          'программное декодирование.',
+                          style: TextStyle(
+                            fontFamily: AppFonts.body,
+                            fontSize: 10.5,
+                            height: 1.5,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 2),
+      child: Text(
+        value,
+        style: const TextStyle(
+          fontFamily: AppFonts.body,
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
+          letterSpacing: 0.2,
+          color: AppColors.textSoft,
+        ),
+      ),
+    );
+  }
+
+  Widget _option({
+    required String title,
+    required String subtitle,
+    required bool selected,
+    required VoidCallback onTap,
+    bool enabled = true,
+  }) {
+    final tone = selected ? AppColors.accentBright : AppColors.textFaint;
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.accent.withValues(alpha: 0.12)
+                  : AppColors.surfaceHigh.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected
+                    ? AppColors.accent.withValues(alpha: 0.55)
+                    : AppColors.border,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  selected ? AppIcons.checkCircle : AppIcons.circle,
+                  size: 17,
+                  color: tone,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontFamily: AppFonts.body,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                          color: selected ? AppColors.text : AppColors.textSoft,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontFamily: AppFonts.body,
+                          fontSize: 10,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.visible,
@@ -1184,6 +1530,7 @@ class _TopBar extends StatelessWidget {
     required this.onBack,
     required this.onQuality,
     required this.onEpisodes,
+    required this.onSettings,
   });
 
   final bool visible;
@@ -1195,6 +1542,7 @@ class _TopBar extends StatelessWidget {
   final VoidCallback onBack;
   final ValueChanged<String> onQuality;
   final VoidCallback onEpisodes;
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -1306,6 +1654,12 @@ class _TopBar extends StatelessWidget {
                         label: _qualityLabel(quality),
                       ),
                     ),
+                  const SizedBox(width: 8),
+                  _IconButton(
+                    icon: AppIcons.speedometer,
+                    tooltip: 'настройки видео',
+                    onTap: onSettings,
+                  ),
                   const SizedBox(width: 8),
                   _IconButton(
                     icon: AppIcons.filmStrip,

@@ -255,6 +255,15 @@ class AnimeRelease {
     'shikimori_id': shikimoriId,
   };
 
+  /// Canonical key in the local library: the Shikimori id when it is known,
+  /// otherwise the release id. Temporary Shikimori-only snapshots use a
+  /// negative id, but they still resolve to the same library entry as the
+  /// playable release (`shikimoriId` is always positive).
+  int get libraryId {
+    final canonical = shikimoriId ?? 0;
+    return canonical > 0 ? canonical : id;
+  }
+
   String get displayTitle => lc(name, fallback: 'без названия');
 
   String? get displayEnglish => lcOrNull(englishName);
