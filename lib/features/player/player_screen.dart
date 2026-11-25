@@ -27,7 +27,7 @@ import '../../core/utils/format.dart';
 import '../../ui/widgets/embed_frame.dart';
 import '../../ui/widgets/gradient_button.dart';
 import '../../ui/widgets/video_surface.dart';
-import '../details/widgets/playback_sheet.dart';
+import 'episode_picker_sheet.dart';
 
 /// полноэкранный плеер anishka: hls через media_kit и собственные контролы.
 class PlayerScreen extends StatefulWidget {
@@ -762,36 +762,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _openEpisodePicker() async {
     final release = _release;
-    if (release == null) return;
+    final voice = _voice;
+    if (release == null || voice == null) return;
     _hideTimer?.cancel();
     setState(() => _controlsVisible = true);
 
-    final selection = await showPlaybackSheet(
+    final selected = await showEpisodePickerSheet(
       context,
-      release: release,
-      initialEpisode: _episode?.ordinal,
-      initialVoice: _voice?.id,
+      episodes: release.episodes,
+      voiceTitle: voice.title,
+      currentOrdinal: _episode?.ordinal,
     );
     if (!mounted) return;
-
-    if (selection == null) {
-      _revealControls();
-      _focusNode.requestFocus();
+    _revealControls();
+    _focusNode.requestFocus();
+    if (selected == null) return;
+    if (selected.ordinal == _episode?.ordinal) {
+      if (_playerError != null) await _retryPlayback();
       return;
     }
-    if (selection.episode.id == _episode?.id &&
-        selection.voice.id == _voice?.id) {
-      _revealControls();
-      _focusNode.requestFocus();
-      return;
-    }
-
-    await _startPlayback(
-      selection.episode,
-      selection.voice.id == defaultVoiceoverId && _voice != null
-          ? _voice!
-          : selection.voice,
-    );
+    await _startPlayback(selected, voice);
   }
 
   Future<void> _openPlaybackSettings() async {
@@ -1033,10 +1023,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
             fit: StackFit.expand,
             children: [
               const ColoredBox(color: Colors.black),
-              if (controller != null)
+              // On web the video is an HTML element that paints above the
+              // Flutter canvas. Removing it while an error/loading overlay is
+              // visible keeps the card clickable instead of hiding it behind
+              // the video surface.
+              if (controller != null &&
+                  !_loadingRelease &&
+                  _loadError == null &&
+                  _playerError == null)
                 Center(child: VideoSurface(controller: controller)),
-              // Error/loading overlays must be BEFORE the GestureDetector so they
-              // receive taps first (Stack hit-tests in reverse order: last child wins).
+              // Overlays are placed after the video surface and the error card
+              // is the last child, so it wins hit-testing above the controls.
+              // The video element itself is removed while an error is visible:
+              // HTML platform views paint above Flutter widgets on web.
               if (_loadingRelease)
                 _PlayerLoading(onBack: _goBack)
               else if (_loadError != null)
@@ -1046,37 +1045,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   onBack: _goBack,
                 )
               else ...[
-                _CenterOverlay(
-                  playing: _playing,
-                  buffering: _buffering,
-                  completed: _completed,
-                  error: _playerError,
-                  errorDetails: _errorDetails,
-                  controlsVisible: _controlsVisible,
-                  onPlay: _togglePlay,
-                  onReplay: _replay,
-                  onRetry: _retryPlayback,
-                  onExternal:
-                      !EmbedFrame.isEmbedSupported &&
-                          episode?.embedUrl?.isNotEmpty == true
-                      ? () => unawaited(_openExternal())
-                      : null,
-                  onNext: _nextEpisode == null
-                      ? null
-                      : () => unawaited(_playEpisode(_nextEpisode!)),
-                  onPickEpisode: _openEpisodePicker,
-                  nextLabel: _nextEpisode == null
-                      ? null
-                      : 'серия ${_nextEpisode!.ordinal}',
-                  onSettings: () => unawaited(_openPlaybackSettings()),
-                  onEmbed:
-                      !_isEmbedPlayback &&
-                          episode != null &&
-                          _voice != null &&
-                          _canEmbed(episode)
-                      ? () => unawaited(_startEmbed(episode, _voice!))
-                      : null,
-                ),
                 _SkipButton(
                   position: _position,
                   hintFor: _skipHint,
@@ -1139,6 +1107,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     _dragPosition.value = null;
                     _revealControls();
                   },
+                ),
+                _CenterOverlay(
+                  playing: _playing,
+                  buffering: _buffering,
+                  completed: _completed,
+                  error: _playerError,
+                  errorDetails: _errorDetails,
+                  controlsVisible: _controlsVisible,
+                  onPlay: _togglePlay,
+                  onReplay: _replay,
+                  onRetry: _retryPlayback,
+                  onExternal:
+                      !EmbedFrame.isEmbedSupported &&
+                          episode?.embedUrl?.isNotEmpty == true
+                      ? () => unawaited(_openExternal())
+                      : null,
+                  onNext: _nextEpisode == null
+                      ? null
+                      : () => unawaited(_playEpisode(_nextEpisode!)),
+                  onPickEpisode: _openEpisodePicker,
+                  nextLabel: _nextEpisode == null
+                      ? null
+                      : 'серия ${_nextEpisode!.ordinal}',
+                  onSettings: () => unawaited(_openPlaybackSettings()),
+                  onEmbed:
+                      !_isEmbedPlayback &&
+                          episode != null &&
+                          _voice != null &&
+                          _canEmbed(episode)
+                      ? () => unawaited(_startEmbed(episode, _voice!))
+                      : null,
                 ),
               ],
             ],
