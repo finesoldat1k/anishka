@@ -9,10 +9,10 @@ Targets **Windows, Linux, Android, and Web**.
 ## Features
 
 - **Catalog & search**: full **Shikimori** catalog (ongoing, search,
-  franchise/related releases) with Russian metadata, enriched with
-  **AniList** and **Kitsu** (English titles, scores, posters, banners,
-  descriptions). Search opens as its own page with autofocus, debounce,
-  suggestions and a smooth transition from the home search preview.
+  franchise/related releases) with Russian metadata, plus an **AniList**
+  poster fallback for entries that Shikimori still marks as missing.
+  Search opens as its own page with autofocus, debounce, suggestions and
+  a smooth transition from the home search preview.
 - **Home page**: compact header with search preview and an "о приложении"
   icon, plus convenient tabs (сейчас, избранное, смотрю, в планах,
   просмотренно) and a grid/list view toggle. No hero banner and no brand
@@ -30,13 +30,16 @@ Targets **Windows, Linux, Android, and Web**.
 - **Player**: full-screen, HLS via `media_kit`, custom controls,
   seek/volume/speed/quality, episode picker, skip opening/ending,
   progress save, keyboard shortcuts, immersive mobile mode,
-  error/loading/completed states. Double-tap the left or right half to
-  seek −10/+10 seconds, and hold-drag horizontally for a live ±seconds
-  preview while the progress bar follows the gesture. Playback presets
-  for hardware decoding (auto / compatibility / copy / CPU), network
-  cache size and preferred quality are available both on the `/about`
-  "видео" tab and from the speedometer button in the player; they apply
-  without restarting the episode.
+  error/loading/completed states. A single tap toggles play/pause;
+  double-tap the left or right half seeks −10/+10 seconds, and hold-drag
+  horizontally for a live ±seconds preview while the progress bar follows
+  the gesture. Kodik and HDRezka publish all quality buckets in one
+  resolver response, so their 480/720/1080 menu appears after the first
+  resolve and switching is instant from the cached variants. Playback
+  presets for hardware decoding (auto / compatibility / copy / CPU),
+  network cache size and preferred quality are available both on the
+  `/about` "видео" tab and from the speedometer button in the player;
+  they apply without restarting the episode.
 - **About page**: branding, data/video sources, playback presets,
   library privacy and disclaimer live on `/about` instead of the home
   screen. Bookmarks and favourites update instantly across the details
@@ -126,6 +129,13 @@ storeFile=/absolute/path/to/anishka-release.jks
 Without that file release builds fall back to the debug key so local
 `flutter build apk --release` still works.
 
+GitHub Actions (`.github/workflows/build.yml`) runs analyze + tests and
+builds Android (split APKs + AAB), Linux, Windows and Web on every push and
+publishes the artifacts on every published release. To sign CI builds, add
+these repository secrets: `ANDROID_KEYSTORE_BASE64` (base64 of the `.jks`),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and
+`ANDROID_KEY_PASSWORD`. Without them CI still builds, but with the debug key.
+
 ---
 
 ## Architecture
@@ -160,10 +170,12 @@ lib/
   breaks web requests). Used for search, ongoing lists, metadata,
   franchise relations, trailers and episode screenshots.
 - **Metadata enrichment**: AniList GraphQL (`https://graphql.anilist.co`)
-  and Kitsu REST (`https://kitsu.io/api/edge`) fill in English titles,
-  scores, posters/banners and descriptions when Shikimori metadata is
-  thin. Both are optional: enrichment never throws and the page degrades
-  gracefully.
+  fills in missing Shikimori posters. Shikimori returns its
+  `/assets/globals/missing_*` placeholder for many newly added ongoing
+  entries; those cards used to show only the film icon. Because Shikimori
+  and AniList both understand MAL IDs, one batched `idMal_in` request
+  restores the real artwork without title matching. Optional and
+  best-effort: a poster lookup never blocks or breaks the catalog.
 - **Playback**: AniLibria v4 (`https://anilibria.top/api/v1`) resolved by
   Shikimori ID, with AnimeVost, SameBand, AnilibMe and resolver-backed
   Yani / Kodik / HDRezka as fallback sources. Scraped providers keep
