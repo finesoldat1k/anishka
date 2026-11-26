@@ -30,11 +30,13 @@ Targets **Windows, Linux, Android, and Web**.
 - **Player**: full-screen, HLS via `media_kit`, custom controls,
   seek/volume/speed/quality, episode picker, skip opening/ending,
   progress save, keyboard shortcuts, immersive mobile mode,
-  error/loading/completed states. Playback presets for hardware
-  decoding (auto / compatibility / copy / CPU), network cache size and
-  preferred quality are available both on the `/about` "видео" tab and
-  from the speedometer button in the player; they apply without
-  restarting the episode.
+  error/loading/completed states. Double-tap the left or right half to
+  seek −10/+10 seconds, and hold-drag horizontally for a live ±seconds
+  preview while the progress bar follows the gesture. Playback presets
+  for hardware decoding (auto / compatibility / copy / CPU), network
+  cache size and preferred quality are available both on the `/about`
+  "видео" tab and from the speedometer button in the player; they apply
+  without restarting the episode.
 - **About page**: branding, data/video sources, playback presets,
   library privacy and disclaimer live on `/about` instead of the home
   screen. Bookmarks and favourites update instantly across the details

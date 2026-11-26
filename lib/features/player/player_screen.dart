@@ -29,6 +29,8 @@ import '../../ui/widgets/gradient_button.dart';
 import '../../ui/widgets/video_surface.dart';
 import 'episode_picker_sheet.dart';
 
+typedef _SeekFeedbackData = ({Duration delta, Duration target});
+
 /// полноэкранный плеер anishka: hls через media_kit и собственные контролы.
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({
@@ -93,6 +95,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _duration = ValueNotifier<Duration>(Duration.zero);
   final _buffer = ValueNotifier<Duration>(Duration.zero);
   final _dragPosition = ValueNotifier<Duration?>(null);
+  final _seekFeedback = ValueNotifier<_SeekFeedbackData?>(null);
+  Timer? _seekFeedbackTimer;
+  Duration? _seekGestureStart;
+  double _seekGestureSeconds = 0;
+  Offset? _doubleTapPosition;
 
   bool get _isMobile =>
       !kIsWeb &&
@@ -181,6 +188,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _seekFeedbackTimer?.cancel();
     _focusNode.dispose();
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
@@ -191,6 +199,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _duration.dispose();
     _buffer.dispose();
     _dragPosition.dispose();
+    _seekFeedback.dispose();
     if (_isMobile) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
       unawaited(
@@ -630,7 +639,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final episode = _episode;
     if (episode == null || quality == _quality) return;
     final token = ++_playbackToken;
-    final position = _position.value;
+    final position = _dragPosition.value ?? _position.value;
     final wasPlaying = _playing;
 
     ResolvedStream? stream;
@@ -672,14 +681,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final player = _ensurePlayer();
       await player.open(
-        Media(stream.url, httpHeaders: stream.headers),
+        Media(
+          stream.url,
+          httpHeaders: stream.headers,
+          start: position > Duration.zero ? position : null,
+        ),
         play: wasPlaying,
       );
       if (!_isCurrentPlayback(token)) return;
+      // `open` resets the position stream while the new quality is loading.
+      // Keep the displayed time at the old position until mpv reports the
+      // resumed playback position; `Media.start` makes playback itself resume
+      // there even before the file is fully loaded.
       if (position > Duration.zero) {
-        await player.seek(position);
+        _position.value = position;
+        _dragPosition.value = null;
       }
-      if (!_isCurrentPlayback(token)) return;
       _focusNode.requestFocus();
     } catch (error) {
       if (!_isCurrentPlayback(token)) return;
@@ -736,22 +753,114 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _revealControls();
   }
 
-  Future<void> _seekTo(Duration target) async {
-    final player = _player;
-    if (player == null) return;
+  Duration _clampSeekTarget(Duration target) {
     final total = _totalDuration;
     var milliseconds = target.inMilliseconds;
     if (milliseconds < 0) milliseconds = 0;
     if (total > Duration.zero) {
       milliseconds = math.min(milliseconds, total.inMilliseconds);
     }
-    final resolved = Duration(milliseconds: milliseconds);
+    return Duration(milliseconds: milliseconds);
+  }
+
+  Future<void> _seekTo(Duration target) async {
+    final player = _player;
+    if (player == null) return;
+    final resolved = _clampSeekTarget(target);
     _position.value = resolved;
     await player.seek(resolved);
   }
 
   Future<void> _seekRelative(Duration delta) async {
     await _seekTo(_position.value + delta);
+  }
+
+  void _showSeekFeedback(
+    Duration delta,
+    Duration target, {
+    bool autoHide = true,
+  }) {
+    _seekFeedbackTimer?.cancel();
+    _seekFeedback.value = (delta: delta, target: target);
+    if (!autoHide) return;
+    _seekFeedbackTimer = Timer(const Duration(milliseconds: 850), () {
+      if (!mounted) return;
+      _seekFeedback.value = null;
+    });
+  }
+
+  void _handleSurfaceTapDown(TapDownDetails details) {
+    // Reveal immediately on pointer down instead of waiting for the
+    // double-tap timeout; `onTap` itself is delayed when a double-tap
+    // recognizer is registered.
+    _revealControls();
+  }
+
+  void _handleDoubleTap() {
+    if (_player == null || _playerError != null) return;
+    final width = context.size?.width ?? MediaQuery.sizeOf(context).width;
+    final leftSide = (_doubleTapPosition?.dx ?? width) < width / 2;
+    final delta = leftSide ? -_seekStep : _seekStep;
+    final current = _position.value;
+    final target = _clampSeekTarget(current + delta);
+    if (target == current) return;
+    _showSeekFeedback(target - current, target);
+    unawaited(_seekTo(target));
+  }
+
+  void _handleSeekDragStart(DragStartDetails details) {
+    if (_player == null || _playerError != null) return;
+    _hideTimer?.cancel();
+    _seekFeedbackTimer?.cancel();
+    _seekGestureStart = _position.value;
+    _seekGestureSeconds = 0;
+    _dragPosition.value = _position.value;
+    if (!_controlsVisible) {
+      setState(() => _controlsVisible = true);
+    }
+    _showSeekFeedback(Duration.zero, _position.value, autoHide: false);
+  }
+
+  void _handleSeekDragUpdate(DragUpdateDetails details, double width) {
+    final start = _seekGestureStart;
+    if (start == null || width <= 0) return;
+    // Scale with the episode: short clips stay precise, long videos need a
+    // wider range, and a full swipe can always cover a few minutes.
+    final totalSeconds = _totalDuration.inSeconds;
+    final span = totalSeconds <= 0
+        ? 180.0
+        : (totalSeconds * 0.2).clamp(120, 300).toDouble();
+    _seekGestureSeconds += details.delta.dx / width * span;
+    final target = _clampSeekTarget(
+      start + Duration(milliseconds: (_seekGestureSeconds * 1000).round()),
+    );
+    _dragPosition.value = target;
+    _showSeekFeedback(target - start, target, autoHide: false);
+  }
+
+  void _handleSeekDragEnd(DragEndDetails details) {
+    final start = _seekGestureStart;
+    final target = _dragPosition.value;
+    _seekGestureStart = null;
+    _seekGestureSeconds = 0;
+    _dragPosition.value = null;
+    if (start == null || target == null) {
+      _seekFeedback.value = null;
+      _revealControls();
+      return;
+    }
+    final delta = target - start;
+    _showSeekFeedback(delta, target);
+    unawaited(_seekTo(target));
+    _revealControls();
+  }
+
+  void _handleSeekDragCancel() {
+    _seekGestureStart = null;
+    _seekGestureSeconds = 0;
+    _dragPosition.value = null;
+    _seekFeedback.value = null;
+    _revealControls();
   }
 
   Future<void> _playEpisode(AnimeEpisode episode) async {
@@ -1045,12 +1154,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   onBack: _goBack,
                 )
               else ...[
-                _SkipButton(
-                  position: _position,
-                  hintFor: _skipHint,
-                  onSkip: (target) => unawaited(_seekTo(target)),
-                  raised: _controlsVisible,
-                ),
+                if (_playerError == null)
+                  Positioned.fill(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTapDown: _handleSurfaceTapDown,
+                          onDoubleTapDown: (details) =>
+                              _doubleTapPosition = details.localPosition,
+                          onDoubleTap: _handleDoubleTap,
+                          onHorizontalDragStart: _handleSeekDragStart,
+                          onHorizontalDragUpdate: (details) =>
+                              _handleSeekDragUpdate(
+                                details,
+                                constraints.maxWidth,
+                              ),
+                          onHorizontalDragEnd: _handleSeekDragEnd,
+                          onHorizontalDragCancel: _handleSeekDragCancel,
+                        );
+                      },
+                    ),
+                  ),
                 _TopBar(
                   visible: _controlsVisible,
                   compact: compact,
@@ -1108,6 +1233,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     _revealControls();
                   },
                 ),
+                _SkipButton(
+                  position: _position,
+                  hintFor: _skipHint,
+                  onSkip: (target) => unawaited(_seekTo(target)),
+                  raised: _controlsVisible,
+                ),
                 _CenterOverlay(
                   playing: _playing,
                   buffering: _buffering,
@@ -1139,6 +1270,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ? () => unawaited(_startEmbed(episode, _voice!))
                       : null,
                 ),
+                _SeekFeedback(feedback: _seekFeedback),
               ],
             ],
           ),
@@ -1567,18 +1699,18 @@ class _TopBar extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color(0xE6000000),
-                  Color(0x99000000),
+                  Color(0xB3000000),
+                  Color(0x59000000),
                   Color(0x00000000),
                 ],
-                stops: [0, 0.55, 1],
+                stops: [0, 0.5, 1],
               ),
             ),
             padding: EdgeInsets.fromLTRB(
               compact ? 12 : 22,
               8,
               compact ? 12 : 22,
-              34,
+              18,
             ),
             child: SafeArea(
               bottom: false,
@@ -1592,6 +1724,7 @@ class _TopBar extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
@@ -1758,8 +1891,8 @@ class _BottomBar extends StatelessWidget {
                 begin: Alignment.bottomCenter,
                 end: Alignment.topCenter,
                 colors: [
-                  Color(0xF2000000),
-                  Color(0x99000000),
+                  Color(0xCC000000),
+                  Color(0x59000000),
                   Color(0x00000000),
                 ],
                 stops: [0, 0.5, 1],
@@ -1767,7 +1900,7 @@ class _BottomBar extends StatelessWidget {
             ),
             padding: EdgeInsets.fromLTRB(
               compact ? 14 : 26,
-              48,
+              28,
               compact ? 14 : 26,
               10,
             ),
@@ -2077,6 +2210,146 @@ class _SeekRow extends StatelessWidget {
   }
 }
 
+class _SeekFeedback extends StatefulWidget {
+  const _SeekFeedback({required this.feedback});
+
+  final ValueListenable<_SeekFeedbackData?> feedback;
+
+  @override
+  State<_SeekFeedback> createState() => _SeekFeedbackState();
+}
+
+class _SeekFeedbackState extends State<_SeekFeedback> {
+  _SeekFeedbackData? _data;
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _data = widget.feedback.value;
+    _visible = _data != null;
+    widget.feedback.addListener(_sync);
+  }
+
+  @override
+  void didUpdateWidget(_SeekFeedback oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.feedback != widget.feedback) {
+      oldWidget.feedback.removeListener(_sync);
+      widget.feedback.addListener(_sync);
+      _sync();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.feedback.removeListener(_sync);
+    super.dispose();
+  }
+
+  void _sync() {
+    final value = widget.feedback.value;
+    if (value == null) {
+      if (_visible) setState(() => _visible = false);
+      return;
+    }
+    setState(() {
+      _data = value;
+      _visible = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = _data;
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.center,
+        child: AnimatedOpacity(
+          opacity: _visible && data != null ? 1 : 0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          child: AnimatedScale(
+            scale: _visible ? 1 : 0.94,
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            child: data == null
+                ? const SizedBox.shrink()
+                : _SeekFeedbackCard(data: data),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SeekFeedbackCard extends StatelessWidget {
+  const _SeekFeedbackCard({required this.data});
+
+  final _SeekFeedbackData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final forward = data.delta >= Duration.zero;
+    final seconds = (data.delta.inMilliseconds.abs() / 1000).round();
+    final amount = seconds == 0 ? '0 с' : '${forward ? '+' : '−'}$seconds с';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 13, 20, 13),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.66),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            forward ? AppIcons.arrowRight : AppIcons.arrowLeft,
+            size: 27,
+            color: AppColors.accentBright,
+          ),
+          const SizedBox(width: 12),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                amount,
+                style: const TextStyle(
+                  fontFamily: AppFonts.display,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 23,
+                  letterSpacing: -0.5,
+                  color: Colors.white,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'к ${formatDuration(data.target)}',
+                style: const TextStyle(
+                  fontFamily: AppFonts.body,
+                  fontSize: 11,
+                  color: AppColors.textSoft,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SkipButton extends StatelessWidget {
   const _SkipButton({
     required this.position,
@@ -2100,7 +2373,7 @@ class _SkipButton extends StatelessWidget {
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
           right: 24,
-          bottom: raised ? 118 : 28,
+          bottom: raised ? 166 : 28,
           child: AnimatedOpacity(
             opacity: hint == null ? 0 : 1,
             duration: const Duration(milliseconds: 180),
