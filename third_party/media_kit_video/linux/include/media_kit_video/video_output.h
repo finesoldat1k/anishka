@@ -90,6 +90,18 @@ void video_output_set_size(VideoOutput* self, gint64 width, gint64 height);
 
 mpv_render_context* video_output_get_render_context(VideoOutput* self);
 
+/**
+ * @brief Creates the mpv render context using Flutter's current EGL context.
+ *
+ * Must be called from TextureGL's populate callback on the raster thread,
+ * where Flutter's OpenGL context is current. A shared EGL context is created
+ * so mpv can render into textures sampled by Flutter.
+ *
+ * @param self |VideoOutput| reference.
+ * @return Whether the render context is available.
+ */
+gboolean video_output_ensure_render_context(VideoOutput* self);
+
 GdkGLContext* video_output_get_gdk_gl_context(VideoOutput* self);
 
 EGLDisplay video_output_get_egl_display(VideoOutput* self);

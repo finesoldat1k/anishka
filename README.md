@@ -183,14 +183,18 @@ lib/
   thread on some systems (mpv 0.41 + libluajit 5.1). See
   `third_party/media_kit/PATCHES.md` for upgrade procedure.
 - **Linux video rendering fix**: `third_party/media_kit_video/` vendors
-  `media_kit_video` 2.0.1 with a patched `linux/video_output.cc`. Upstream
+  `media_kit_video` 2.0.1 with patches in `linux/video_output.cc`,
+  `linux/texture_gl.cc`, and `lib/src/video/video_texture.dart`. Upstream
   2.0.1 calls `eglGetCurrentContext()` on the GTK platform thread, gets
   `EGL_NO_CONTEXT`, and silently falls back to software rendering
   (`S/W rendering`), which stutters at any decoder setting. The patch
-  creates a dedicated EGL context and pbuffer for libmpv. After playback
-  starts, the log should contain
-  `H/W rendering with dedicated EGL context.` and `hwdec-current=vaapi`
-  instead of `vaapi-copy`. See `third_party/media_kit_video/PATCHES.md`.
+  creates `mpv_render_context` lazily from the raster-thread `populate`
+  callback with a context shared with Flutter's EGL context, renders into
+  an FBO, and returns that shared texture to Flutter. A 1×1 bootstrap
+  frame starts mpv decoding before real video dimensions are known. After
+  playback starts, the log should contain `H/W rendering.` and
+  `hwdec-current=vaapi` instead of `vaapi-copy`. See
+  `third_party/media_kit_video/PATCHES.md`.
 
 ---
 

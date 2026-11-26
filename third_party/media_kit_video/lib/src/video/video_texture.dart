@@ -402,7 +402,7 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
                                   builder: (context, rect, _) {
                                     if (id != null &&
                                         rect != null &&
-                                        _visible) {
+                                        (_visible || Platform.isLinux)) {
                                       return SizedBox(
                                         // Apply aspect ratio if provided.
                                         width:
