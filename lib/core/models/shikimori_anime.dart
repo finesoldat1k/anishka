@@ -53,6 +53,24 @@ class ShikimoriAnime {
   /// Display title (russian preferred).
   String get displayTitle => russian.isNotEmpty ? russian : name;
 
+  /// Copy with a replacement image, used by optional poster fallbacks.
+  ShikimoriAnime copyWith({ShikimoriImage? image}) {
+    return ShikimoriAnime(
+      id: id,
+      name: name,
+      russian: russian,
+      kind: kind,
+      score: score,
+      status: status,
+      episodes: episodes,
+      episodesAired: episodesAired,
+      image: image ?? this.image,
+      url: url,
+      airedOn: airedOn,
+      releasedOn: releasedOn,
+    );
+  }
+
   /// Poster URL for lists (preview size, with graceful fallbacks).
   String? get posterUrl =>
       _bestImage([image.preview, image.x96, image.original, image.x48]);
@@ -264,15 +282,11 @@ class ShikimoriAnimeDetails {
       english: asStringList(json['english']),
       japanese: asStringList(json['japanese']),
       synonyms: asStringList(json['synonyms']),
-      genres: asMapList(json['genres'])
-          .map(ShikimoriGenre.fromJson)
-          .toList(),
+      genres: asMapList(json['genres']).map(ShikimoriGenre.fromJson).toList(),
       studios: asMapList(json['studios'])
           .map(ShikimoriStudio.fromJson)
           .toList(),
-      videos: asMapList(json['videos'])
-          .map(ShikimoriVideo.fromJson)
-          .toList(),
+      videos: asMapList(json['videos']).map(ShikimoriVideo.fromJson).toList(),
       franchise: asString(json['franchise']),
       screenshots: asMapList(json['screenshots'])
           .map((item) => ShikimoriConfig.imageUrl(asString(item['original'])))

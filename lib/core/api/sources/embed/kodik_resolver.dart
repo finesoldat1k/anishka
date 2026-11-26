@@ -86,7 +86,7 @@ class KodikResolver implements EmbedResolver {
       final key = pickQuality(streams.keys, requested: quality);
       if (key == null) return null;
       final stream = streams[key]!;
-      return stream.copyWith(quality: key);
+      return stream.copyWith(quality: key, variants: streams);
     } catch (_) {
       return null;
     }

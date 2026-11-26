@@ -40,13 +40,35 @@ void main() {
       const stream = ResolvedStream(url: 'https://x/a.mp4');
       expect(stream.toJson().containsKey('headers'), isFalse);
     });
+
+    test('round-trips quality variants', () {
+      const stream = ResolvedStream(
+        url: 'https://cdn.example/1080.m3u8',
+        quality: '1080',
+        variants: {
+          '1080': ResolvedStream(
+            url: 'https://cdn.example/1080.m3u8',
+            quality: '1080',
+          ),
+          '720': ResolvedStream(
+            url: 'https://cdn.example/720.m3u8',
+            quality: '720',
+          ),
+        },
+      );
+
+      final decoded = ResolvedStream.fromJson(stream.toJson());
+
+      expect(decoded.variants.keys, containsAll(['1080', '720']));
+      expect(decoded.variants['720']!.url, 'https://cdn.example/720.m3u8');
+      expect(decoded.variants['720']!.variants, isEmpty);
+    });
   });
 
   group('Kodik URL decoding', () {
     test('decodes rot18 + base64', () {
       // ROT-18 of the base64 of https://cdn.example.com/720.mp4.
-      const encoded =
-          'iPZ0kPU6Tg9rHO4cHFppjFJaHA5rj20dVhQeTu1eVI==';
+      const encoded = 'iPZ0kPU6Tg9rHO4cHFppjFJaHA5rj20dVhQeTu1eVI==';
       expect(decodeKodikUrl(encoded), 'https://cdn.example.com/720.mp4');
     });
 
@@ -64,10 +86,7 @@ void main() {
     test('parses api links and fixes the 720 bucket', () {
       final links = <dynamic, dynamic>{
         '720': [
-          {
-            'src':
-                'iPZ0kPU6Tg9rHO4cHFppjFJaHA5rj20dVLoeTu1eVLw3UrI=',
-          },
+          {'src': 'iPZ0kPU6Tg9rHO4cHFppjFJaHA5rj20dVLoeTu1eVLw3UrI='},
         ],
         '480': [
           {'src': '//cdn.example.com/480.m3u8'},
@@ -89,7 +108,10 @@ void main() {
     });
 
     test('requested picks the closest quality', () {
-      expect(pickQuality(['360', '480', '720', '1080'], requested: '720'), '720');
+      expect(
+        pickQuality(['360', '480', '720', '1080'], requested: '720'),
+        '720',
+      );
       expect(pickQuality(['360', '480', '1080'], requested: '720'), '480');
     });
   });

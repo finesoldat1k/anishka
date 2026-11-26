@@ -184,7 +184,7 @@ class HDRezka implements SourceProvider, StreamResolvableSourceProvider {
       if (streams.isEmpty) return null;
       final key = pickQuality(streams.keys, requested: quality);
       if (key == null) return null;
-      return streams[key]!.copyWith(quality: key);
+      return streams[key]!.copyWith(quality: key, variants: streams);
     } catch (_) {
       return null;
     }

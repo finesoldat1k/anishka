@@ -80,6 +80,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   String _quality = '1080';
   final Map<String, ResolvedStream> _resolvedStreams = {};
+
+  /// Quality labels discovered lazily from a resolver for each episode.
+  ///
+  /// Kodik and HDRezka only reveal 480/720/1080 after the first resolution.
+  /// Until then the menu has to say «авто»; once the variants arrive this map
+  /// makes the real qualities selectable.
+  final Map<String, Set<String>> _discoveredQualities = {};
   bool _embedFallback = false;
   double _volume = 100;
   double _lastVolume = 80;
@@ -489,10 +496,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
 
     final preferred = _playbackSettings.preferredQuality(qualities);
-    final desired = quality ?? (preferred.isEmpty ? _quality : preferred);
-    final resolved = qualities.contains(desired) ? desired : qualities.first;
+    var desired = quality ?? (preferred.isEmpty ? _quality : preferred);
+    // Resolver-backed episodes start with only «авто» in the list. Pass the
+    // saved concrete preference through anyway so Kodik/HDRezka can choose it
+    // during the first resolution instead of always opening the best stream.
+    if (quality == null && qualities.length == 1 && qualities.first == 'auto') {
+      final saved = _playbackSettings.quality.quality;
+      if (saved != null) desired = saved;
+    }
+    final resolved = qualities.contains(desired)
+        ? desired
+        : (desired != 'auto' && episode.canResolve ? desired : qualities.first);
 
     ResolvedStream? stream;
+    String actualQuality = resolved;
     final direct = episode.hlsForQuality(resolved);
     if (direct != null && direct.isNotEmpty) {
       stream = ResolvedStream(
@@ -546,15 +563,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
         });
         return;
       }
-      _resolvedStreams[_streamKey(episode, resolved)] = stream;
     }
+
+    _rememberResolvedStream(episode, stream);
+    actualQuality = stream.quality ?? resolved;
 
     if (!_isCurrentPlayback(token)) return;
 
     setState(() {
       _episode = episode;
       _voice = voice;
-      _quality = resolved;
+      _quality = actualQuality;
       _embedFallback = false;
       _completed = false;
       _playerError = null;
@@ -640,7 +659,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (episode.hls720 != null) '720',
       if (episode.hls480 != null) '480',
     ];
-    if (options.isEmpty && (episode.streamUrl != null || episode.canResolve)) {
+    if (options.isNotEmpty) return options;
+
+    // Resolver-backed sources (Kodik, HDRezka, ...) only expose their real
+    // qualities after the first stream resolution.
+    final discovered = _discoveredQualities[episode.id];
+    if (discovered != null && discovered.isNotEmpty) {
+      final sorted = discovered.toList()
+        ..sort(
+          (a, b) => (int.tryParse(b) ?? 0).compareTo(int.tryParse(a) ?? 0),
+        );
+      return sorted;
+    }
+
+    if (episode.streamUrl != null || episode.canResolve) {
       return ['auto'];
     }
     return options;
@@ -652,6 +684,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (options.isEmpty) return const [];
     if (options.contains('auto')) return options;
     return ['auto', ...options];
+  }
+
+  /// Store a resolved stream and every quality variant that came with it.
+  void _rememberResolvedStream(AnimeEpisode episode, ResolvedStream stream) {
+    final labels = <String>{};
+
+    void remember(ResolvedStream value) {
+      final label = value.quality?.trim();
+      if (label == null || label.isEmpty) return;
+      labels.add(label);
+      _resolvedStreams[_streamKey(episode, label)] = value;
+    }
+
+    remember(stream);
+    for (final variant in stream.variants.values) {
+      remember(variant);
+    }
+
+    // A single stream is still shown as «авто»: there is nothing to choose.
+    if (labels.length > 1) {
+      _discoveredQualities[episode.id] = labels;
+    }
   }
 
   /// Apply a quality selected either from the top bar or the settings sheet.
@@ -720,12 +774,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
         });
         return;
       }
-      _resolvedStreams[_streamKey(episode, quality)] = stream;
     }
+
+    _rememberResolvedStream(episode, stream);
+    final actualQuality = stream.quality ?? quality;
 
     if (!_isCurrentPlayback(token)) return;
     setState(() {
-      _quality = quality;
+      _quality = actualQuality;
       _playerError = null;
       _errorDetails = null;
     });
@@ -846,6 +902,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // double-tap timeout; `onTap` itself is delayed when a double-tap
     // recognizer is registered.
     _revealControls();
+  }
+
+  void _handleSurfaceTap() {
+    // A simple tap is play/pause. Double taps still seek; Flutter only fires
+    // `onTap` when the double-tap recognizer did not win the gesture arena.
+    unawaited(_togglePlay());
   }
 
   void _handleDoubleTap() {
@@ -1208,6 +1270,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         return GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTapDown: _handleSurfaceTapDown,
+                          onTap: _handleSurfaceTap,
                           onDoubleTapDown: (details) =>
                               _doubleTapPosition = details.localPosition,
                           onDoubleTap: _handleDoubleTap,

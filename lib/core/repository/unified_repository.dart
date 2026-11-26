@@ -8,6 +8,7 @@
 
 import 'dart:async';
 
+import '../api/metadata/anilist_posters.dart';
 import '../api/metadata/shikimori.dart';
 import '../api/service_registry.dart';
 import '../api/sources/resolved_stream.dart';
@@ -35,10 +36,14 @@ class UnifiedRepository {
     required this._cache,
     this._streamResolver,
     this._streamResolverDetailed,
+    this._posterFallback,
   });
 
   final ApiServiceRegistry _registry;
   final UnifiedCache _cache;
+
+  /// Optional AniList lookup for Shikimori entries whose poster is missing.
+  final AniListPosterService? _posterFallback;
 
   /// Resolve an episode stream URL (injected by [AppServices]).
   final Future<String?> Function(AnimeEpisode, {required String quality})?
@@ -79,6 +84,89 @@ class UnifiedRepository {
     } catch (_) {
       return onError;
     }
+  }
+
+  /// Fill missing card posters from AniList (best-effort).
+  ///
+  /// Shikimori publishes `missing_original.jpg` for many newly added ongoing
+  /// entries. The model hides that placeholder, so those cards used to render
+  /// only the film icon. AniList uses the same MAL IDs and usually has the
+  /// real artwork already.
+  Future<List<ShikimoriAnime>> _withCardPosters(
+    List<ShikimoriAnime> items,
+  ) async {
+    final fallback = _posterFallback;
+    if (fallback == null || items.isEmpty) return items;
+    final missing = items
+        .where((item) => item.posterUrl == null)
+        .map((item) => item.id)
+        .toList();
+    if (missing.isEmpty) return items;
+
+    final posters = await fallback
+        .postersForIds(missing)
+        .timeout(
+          const Duration(seconds: 4),
+          onTimeout: () => const <int, String>{},
+        );
+    if (posters.isEmpty) return items;
+    return [
+      for (final item in items)
+        if (item.posterUrl == null && posters[item.id] != null)
+          item.copyWith(
+            image: ShikimoriImage(
+              original: posters[item.id],
+              preview: posters[item.id],
+              x96: posters[item.id],
+              x48: posters[item.id],
+            ),
+          )
+        else
+          item,
+    ];
+  }
+
+  Future<UnifiedMetadata> _withPosterFallback(UnifiedMetadata value) async {
+    final fallback = _posterFallback;
+    if (fallback == null || value.posterUrl != null || value.shikimoriId <= 0) {
+      return value;
+    }
+    final poster = await fallback
+        .posterFor(value.shikimoriId)
+        .timeout(
+          const Duration(seconds: 4),
+          onTimeout: () => null,
+        );
+    if (poster == null || poster.isEmpty) return value;
+    return value.copyWith(posterUrl: poster);
+  }
+
+  /// Batched poster fallback for search results.
+  Future<List<UnifiedMetadata>> _withMetadataPosters(
+    List<UnifiedMetadata> items,
+  ) async {
+    final fallback = _posterFallback;
+    if (fallback == null || items.isEmpty) return items;
+    final missing = items
+        .where((item) => item.posterUrl == null && item.shikimoriId > 0)
+        .map((item) => item.shikimoriId)
+        .toList();
+    if (missing.isEmpty) return items;
+
+    final posters = await fallback
+        .postersForIds(missing)
+        .timeout(
+          const Duration(seconds: 4),
+          onTimeout: () => const <int, String>{},
+        );
+    if (posters.isEmpty) return items;
+    return [
+      for (final item in items)
+        if (item.posterUrl == null && posters[item.shikimoriId] != null)
+          item.copyWith(posterUrl: posters[item.shikimoriId])
+        else
+          item,
+    ];
   }
 
   // ============ cached loaders ============
@@ -122,12 +210,9 @@ class UnifiedRepository {
         );
         if (list.isNotEmpty) {
           _registry.reportMetadataSuccess(provider.id);
-          _cache.set(
-            cacheKey,
-            list.take(limit).toList(),
-            ttl: const Duration(minutes: 10),
-          );
-          return list.take(limit).toList();
+          final enriched = await _withCardPosters(list.take(limit).toList());
+          _cache.set(cacheKey, enriched, ttl: const Duration(minutes: 10));
+          return enriched;
         }
       } catch (e) {
         _registry.reportMetadataFailure(provider.id);
@@ -201,12 +286,15 @@ class UnifiedRepository {
         );
         if (list.isNotEmpty) {
           _registry.reportMetadataSuccess(provider.id);
+          final enriched = await _withMetadataPosters(
+            list.take(limit).toList(),
+          );
           _cache.set(
             cacheKey,
-            list.take(limit).toList(),
+            enriched,
             ttl: const Duration(minutes: 5),
           );
-          return list.take(limit).toList();
+          return enriched;
         }
       } catch (e) {
         _registry.reportMetadataFailure(provider.id);
@@ -295,7 +383,9 @@ class UnifiedRepository {
               UnifiedMetadata.fromJson(json as Map<String, dynamic>),
           encoder: (value) => value.toJson(),
         );
-        if (result.shikimoriId > 0) return result;
+        if (result.shikimoriId > 0) {
+          return await _withPosterFallback(result);
+        }
       } catch (_) {
         // Fall through to other providers.
       }

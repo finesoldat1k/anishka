@@ -57,6 +57,29 @@ void main() {
 
       expect(anime.year, 2013);
     });
+
+    test('replaces a missing Shikimori poster with a fallback', () {
+      final anime = ShikimoriAnime.fromJson({
+        'id': 61469,
+        'name': 'steel ball run',
+        'image': {
+          'original': '/assets/globals/missing_original.jpg',
+          'preview': '/assets/globals/missing_preview.jpg',
+        },
+      });
+      expect(anime.posterUrl, isNull);
+
+      final patched = anime.copyWith(
+        image: const ShikimoriImage(
+          original: 'https://cdn.example/poster.jpg',
+          preview: 'https://cdn.example/poster.jpg',
+        ),
+      );
+
+      expect(patched.posterUrl, 'https://cdn.example/poster.jpg');
+      expect(patched.id, 61469);
+      expect(patched.displayTitle, 'steel ball run');
+    });
   });
 
   group('ShikimoriAnimeDetails parsing', () {

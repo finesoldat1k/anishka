@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../api/metadata/anilist_posters.dart';
 import '../api/metadata/shikimori.dart';
 import '../api/service_registry.dart';
 import '../api/sources/anilibme.dart';
@@ -83,6 +84,7 @@ class AppServices extends ChangeNotifier {
   final UnifiedCache _cache;
   final PersistentCache _persistent;
   final EmbedResolverRegistry _embedResolvers;
+  final AniListPosterService _posterFallback = AniListPosterService();
 
   ApiServiceRegistry _registry = _emptyRegistry();
   late UnifiedRepository _repository;
@@ -298,9 +300,41 @@ class AppServices extends ChangeNotifier {
     }
 
     if (stream != null && stream.isPlayable) {
-      _cache.set(cacheKey, stream, ttl: const Duration(hours: 1));
+      _cacheResolvedStream(resolverSource, resolverId, quality, stream);
     }
     return stream;
+  }
+
+  /// Cache the selected stream and every quality returned with it.
+  ///
+  /// Kodik and HDRezka expose all quality buckets in one response. Caching
+  /// each bucket separately means later quality changes are instant instead of
+  /// re-running the whole resolver flow.
+  void _cacheResolvedStream(
+    String resolverSource,
+    String resolverId,
+    String requestedQuality,
+    ResolvedStream stream,
+  ) {
+    const ttl = Duration(hours: 1);
+    final keys = <String>{
+      requestedQuality,
+      if (stream.quality != null) stream.quality!,
+    };
+    for (final key in keys) {
+      _cache.set(
+        CacheKeys.resolvedStreamDetail(resolverSource, resolverId, key),
+        stream,
+        ttl: ttl,
+      );
+    }
+    for (final entry in stream.variants.entries) {
+      _cache.set(
+        CacheKeys.resolvedStreamDetail(resolverSource, resolverId, entry.key),
+        entry.value,
+        ttl: ttl,
+      );
+    }
   }
 
   Future<ResolvedStream?> _safeResolve(
@@ -336,6 +370,7 @@ class AppServices extends ChangeNotifier {
       registry: _registry,
       cache: _cache,
       streamResolverDetailed: _resolveStreamDetailed,
+      posterFallback: _posterFallback,
     );
   }
 
