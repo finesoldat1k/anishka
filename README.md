@@ -93,9 +93,6 @@ export PATH="$HOME/.local/opt/flutter/bin:$PATH"
 # Get deps
 flutter pub get
 
-# Generate fonts (once)
-dart run google_fonts:generate_fonts
-
 # Run
 flutter run -d chrome        # web
 flutter run -d linux         # linux
@@ -105,13 +102,29 @@ flutter run -d android       # android
 
 ### Build Release
 
+The application identifier is **`com.finesoldatik.anishka`** on Android
+(`applicationId`) and Linux (GTK `APPLICATION_ID`). Windows release metadata
+uses the same internal name.
+
 ```bash
-flutter build web --release        # → build/web/
-flutter build linux --release      # → build/linux/x64/release/bundle/
-flutter build windows --release    # → build/windows/runner/Release/
-flutter build apk --release        # → build/app/outputs/flutter-apk/
-flutter build appbundle --release  # → build/app/outputs/bundle/
+flutter build linux --release        # → build/linux/x64/release/bundle/
+flutter build apk --release --split-per-abi  # → per-ABI APKs, much smaller
+flutter build appbundle --release    # → build/app/outputs/bundle/
+flutter build windows --release      # → build/windows/runner/Release/ (Windows host)
 ```
+
+For a signed Android release create `android/key.properties` from
+`android/key.properties.example` and point it at your keystore:
+
+```properties
+storePassword=...
+keyPassword=...
+keyAlias=anishka
+storeFile=/absolute/path/to/anishka-release.jks
+```
+
+Without that file release builds fall back to the debug key so local
+`flutter build apk --release` still works.
 
 ---
 
@@ -124,7 +137,8 @@ lib/
 │   ├── models/        # AnimeRelease, ShikimoriAnime, AnimeSource, Voiceover
 │   ├── repository/    # unified catalog + multi-source aggregation
 │   ├── router/        # go_router configuration (/search, /about, /anime, /watch)
-│   ├── sources/       # AniLibria, AnimeVost, AniDub, Kodik adapters
+│   ├── sources/       # AniLibria, AnimeVost, SameBand, AnilibMe, Yani,
+│   │                  # Kodik and HDRezka adapters (embed resolvers)
 │   ├── storage/       # LibraryStore (favorites, statuses, progress)
 │   ├── theme/         # AppColors, AppTheme (black + violet)
 │   └── utils/         # format, errors, youtube, lc extension
@@ -151,27 +165,26 @@ lib/
   thin. Both are optional: enrichment never throws and the page degrades
   gracefully.
 - **Playback**: AniLibria v4 (`https://anilibria.top/api/v1`) resolved by
-  Shikimori ID, with AnimeVost / AniDub / Kodik as fallback sources.
-  AnimeVost and AniDub are scraped with DLE search + lazy stream
-  resolution (AnimeVost MP4 mirrors via `frame5.php`, AniDub Sibnet
-  embeds). A source search is capped at 8 s and details at 6 s so the
-  details page never hangs.
+  Shikimori ID, with AnimeVost, SameBand, AnilibMe and resolver-backed
+  Yani / Kodik / HDRezka as fallback sources. Scraped providers keep
+  episode pages and resolve signed streams lazily through the embed
+  resolver registry. A source search is capped at 8 s and details at 6 s
+  so the details page never hangs.
 - **Browser limits**: Shikimori, AniList, Kitsu and AniLibria are CORS-
   friendly, so the web build shows metadata plus AniLibria playback.
-  AnimeVost/AniDub HTML endpoints are not CORS-enabled: those sources
-  appear only in native builds and fail silently on web by design.
+  AnimeVost and other scraped HTML endpoints are not CORS-enabled: those
+  sources appear only in native builds and fail silently on web by design.
 - **Trailer**: the details page leads with a trailer card. On web it shows
   the YouTube thumbnail first and loads a real iframe only after the user
   taps (interactive mode with sound); native builds open YouTube
   externally. The ambient muted mode remains available for background
   use.
 - **Voiceovers**: AniLibria cast members are grouped into a single
-  `anilibria` studio track with names as the subtitle. AnimeVost and
-  AniDub expose their own source-level tracks, so the picker shows real
-  source names rather than cast nicknames.
+  `anilibria` studio track with names as the subtitle. Yani, Kodik,
+  HDRezka, AnimeVost and SameBand expose their own source-level tracks,
+  so the picker shows real source names rather than cast nicknames.
 - **State**: `provider` + `ChangeNotifier`; `go_router` for navigation.
-- **Fonts**: Bundled from Google Fonts variable fonts (Unbounded 400–800,
-  Onest 400–800) via `google_fonts` generator.
+- **Fonts**: Bundled static Unbounded and Onest fonts (weights 400–800).
 - **Player**: `media_kit` + `media_kit_video` + `media_kit_libs_video`.
   Web HLS via bundled `hls.js` 1.4.10.
 - **Images**: AniLibria thumbnails are 18×25 px; UI uses `posterUrl`/
@@ -203,8 +216,8 @@ lib/
 ## Legal / Disclaimer
 
 - **anishka** is a third-party client for **Shikimori** metadata and
-  publicly available playback sources (AniLibria primary, plus AnimeVost,
-  AniDub and Kodik fallbacks).
+  publicly available playback sources (AniLibria, AnimeVost, SameBand,
+  AnilibMe, Yani, Kodik and HDRezka).
 - It does **not host** any video content; all streams come from the
   respective sources (`anilibria.top` / `cache.libria.fun`, etc.).
 - The app adds **no ads**, tracking, or analytics.

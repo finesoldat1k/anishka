@@ -89,11 +89,11 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "top.anishka" "\0"
+            VALUE "CompanyName", "finesoldatik" "\0"
             VALUE "FileDescription", "anishka" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "anishka" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 top.anishka. All rights reserved." "\0"
+            VALUE "InternalName", "com.finesoldatik.anishka" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 finesoldatik. All rights reserved." "\0"
             VALUE "OriginalFilename", "anishka.exe" "\0"
             VALUE "ProductName", "anishka" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

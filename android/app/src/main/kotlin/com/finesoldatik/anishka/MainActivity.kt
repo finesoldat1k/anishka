@@ -1,4 +1,4 @@
-package top.anishka.anishka
+package com.finesoldatik.anishka
 
 import io.flutter.embedding.android.FlutterActivity
 

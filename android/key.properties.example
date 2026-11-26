@@ -1,0 +1,5 @@
+# Copy to android/key.properties and fill in your release keystore.
+storePassword=change-me
+keyPassword=change-me
+keyAlias=anishka
+storeFile=/absolute/path/to/anishka-release.jks
