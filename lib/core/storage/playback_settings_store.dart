@@ -99,6 +99,14 @@ enum VideoQualityPreference {
     }
     return VideoQualityPreference.auto;
   }
+
+  /// Match a source quality label such as `720` to its preset.
+  static VideoQualityPreference? fromQuality(String quality) {
+    for (final preset in values) {
+      if (preset.quality == quality) return preset;
+    }
+    return null;
+  }
 }
 
 /// Persisted playback preferences shared by the settings screen and player.

@@ -108,6 +108,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   bool get _muted => _volume <= 0.01;
 
+  /// What the quality pill should show.
+  ///
+  /// `auto` is a persistent playback mode, not a stream label: when it is
+  /// selected the player must say «авто» even if the best stream happens to be
+  /// 1080p, so the top bar and the settings sheet stay in sync.
+  String get _displayQuality {
+    if (_isEmbedPlayback) return _quality;
+    return _playbackSettings.quality == VideoQualityPreference.auto
+        ? 'auto'
+        : _quality;
+  }
+
   Duration get _totalDuration {
     final known = _duration.value;
     if (known > Duration.zero) return known;
@@ -634,6 +646,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return options;
   }
 
+  /// Quality menu contents including the persistent «авто» mode.
+  List<String> _qualityMenuOptions(AnimeEpisode episode) {
+    final options = _qualityOptions(episode);
+    if (options.isEmpty) return const [];
+    if (options.contains('auto')) return options;
+    return ['auto', ...options];
+  }
+
+  /// Apply a quality selected either from the top bar or the settings sheet.
+  ///
+  /// Picking a concrete label also makes it the saved preference, while
+  /// picking «авто» restores automatic selection (highest available quality)
+  /// without losing the actual stream quality used for playback.
+  Future<void> _selectQuality(String selection) async {
+    if (_isEmbedPlayback) return;
+    final episode = _episode;
+    if (episode == null) return;
+
+    if (selection == 'auto') {
+      _playbackSettings.setQuality(VideoQualityPreference.auto);
+      final target = _playbackSettings.preferredQuality(
+        _qualityOptions(episode),
+      );
+      if (target.isNotEmpty && target != _quality) {
+        await _switchQuality(target);
+      } else if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+
+    final preset = VideoQualityPreference.fromQuality(selection);
+    if (preset != null) _playbackSettings.setQuality(preset);
+    if (selection == _quality) {
+      if (mounted) setState(() {});
+      return;
+    }
+    await _switchQuality(selection);
+  }
+
   Future<void> _switchQuality(String quality) async {
     if (_isEmbedPlayback) return;
     final episode = _episode;
@@ -897,7 +949,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _hideTimer?.cancel();
     setState(() => _controlsVisible = true);
     final episode = _episode;
-    final qualities = episode == null
+    final qualities = episode == null || _isEmbedPlayback
         ? const <String>[]
         : _qualityOptions(episode);
 
@@ -909,14 +961,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       builder: (context) => _PlaybackSettingsSheet(
         settings: _playbackSettings,
         qualities: qualities,
-        currentQuality: _quality,
+        currentQuality: _displayQuality,
         onChanged: () => unawaited(_applyPlaybackProperties()),
-        onQualitySelected: (value) {
-          if (_isEmbedPlayback) return;
-          if (qualities.contains(value) && value != _quality) {
-            unawaited(_switchQuality(value));
-          }
-        },
+        onQualitySelected: (value) => unawaited(_selectQuality(value)),
       ),
     );
     if (!mounted) return;
@@ -1183,12 +1230,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   episodeLabel: episode == null
                       ? ''
                       : '${episode.displayName} · ${_voice?.title ?? 'озвучка'}',
-                  quality: _quality,
-                  qualities: episode == null
+                  quality: _displayQuality,
+                  qualities: episode == null || _isEmbedPlayback
                       ? const []
-                      : _qualityOptions(episode),
+                      : _qualityMenuOptions(episode),
                   onBack: _goBack,
-                  onQuality: (value) => unawaited(_switchQuality(value)),
+                  onQuality: (value) => unawaited(_selectQuality(value)),
                   onEpisodes: _openEpisodePicker,
                   onSettings: () => unawaited(_openPlaybackSettings()),
                 ),
@@ -1522,7 +1569,9 @@ class _PlaybackSettingsSheet extends StatelessWidget {
                           _option(
                             title: preset.label,
                             subtitle: preset.quality == null
-                                ? 'сейчас: ${_qualityLabel(currentQuality)}'
+                                ? settings.quality == preset
+                                      ? 'сейчас: ${_qualityLabel(currentQuality)}'
+                                      : preset.description
                                 : preset.description,
                             selected: settings.quality == preset,
                             enabled:

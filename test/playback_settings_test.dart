@@ -65,6 +65,22 @@ void main() {
     expect(store.preferredQuality(['1080', '720']), '720');
   });
 
+  test('maps source quality labels to presets', () {
+    expect(
+      VideoQualityPreference.fromQuality('1080'),
+      VideoQualityPreference.q1080,
+    );
+    expect(
+      VideoQualityPreference.fromQuality('720'),
+      VideoQualityPreference.q720,
+    );
+    expect(
+      VideoQualityPreference.fromQuality('480'),
+      VideoQualityPreference.q480,
+    );
+    expect(VideoQualityPreference.fromQuality('auto'), isNull);
+  });
+
   test('reset returns to defaults and notifies listeners', () async {
     final store = await createStore();
     var notifications = 0;
